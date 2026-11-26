@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<title>RierBux Session Sync</title>
+<style>
+  :root {
+    --bg: #141416;
+    --sub: #1a1a1d;
+    --surface: #1f1f23;
+    --surface2: #27272b;
+    --border: #323238;
+    --text: #f4f4f5;
+    --muted: #8e8e98;
+    --ok: #34d399;
+    --ok-bg: rgba(52, 211, 153, 0.12);
+    --err: #f87171;
+    --err-bg: rgba(248, 113, 113, 0.12);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 345px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 12.5px;
+    padding: 14px;
+    line-height: 1.45;
+  }
+  .head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-bottom: 11px; margin-bottom: 12px; border-bottom: 1px solid var(--border);
+  }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
+  .brand img { width: 22px; height: 22px; object-fit: contain; }
+  .pill {
+    font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+    background: var(--surface2); border: 1px solid var(--border); color: var(--muted);
+  }
+  .pill.ok { color: var(--ok); background: var(--ok-bg); border-color: rgba(52,211,153,.3); }
+  .pill.err { color: var(--err); background: var(--err-bg); border-color: rgba(248,113,113,.3); }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 11px 12px; margin-bottom: 10px;
+  }
+  .kv { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 2.5px 0; }
+  .lbl { font-size: 11px; color: var(--muted); }
+  .val { font-size: 12px; font-weight: 600; text-align: right; max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .field { margin-bottom: 9px; }
+  .field label { display: block; font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+  input[type="text"], input[type="password"] {
+    width: 100%; background: var(--sub); color: var(--text);
+    border: 1px solid var(--border); border-radius: 7px; padding: 7.5px 9px;
+    font-size: 12px; outline: none; font-family: inherit;
+  }
+  input:focus { border-color: #52525b; }
+
+  .chk-row {
+    display: flex; align-items: center; gap: 7px; margin: 6px 0;
+    font-size: 12px; color: #d4d4d8; cursor: pointer;
+  }
+  .chk-row input { width: auto; accent-color: #f4f4f5; }
+
+  .btn {
+    width: 100%; border-radius: 8px; padding: 8px 11px; font-size: 12px; font-weight: 600;
+    cursor: pointer; border: 1px solid var(--border); background: var(--surface2); color: var(--text);
+    transition: opacity .12s, background .12s;
+  }
+  .btn:hover { background: #303036; }
+  .btn-primary { background: #f4f4f5; color: #141416; border-color: #f4f4f5; }
+  .btn-primary:hover { background: #e4e4e7; }
+  .row { display: flex; gap: 7px; margin-top: 8px; }
+  .row .btn { flex: 1; }
+
+  .msg { margin-top: 9px; font-size: 11.5px; min-height: 16px; word-break: break-word; }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 6px; }
+</style>
+</head>
+<body>
+  <div class="head">
+    <div class="brand">
+      <img src="logo.svg" alt="RierBux" />
+      <span>RierBux Session Sync</span>
+    </div>
+    <span id="srvPill" class="pill">Checking</span>
+  </div>
+
+  <!-- Status Chrome & Server -->
+  <div class="card">
+    <div class="kv"><span class="lbl">Sesi Chrome (OAuth)</span><span id="brUser" class="val">Memeriksa...</span></div>
+    <div class="kv"><span class="lbl">Dashboard / VPS</span><span id="srvUser" class="val">-</span></div>
+    <div class="kv"><span class="lbl">Saldo RierCoins</span><span id="srvSaldo" class="val" style="color:var(--ok);">-</span></div>
+  </div>
+
+  <!-- Aksi Cepat -->
+  <button id="pushBtn" class="btn btn-primary">Kirim Sesi ke Dashboard / VPS</button>
+  <div class="row">
+    <button id="googleBtn" class="btn">Login Google</button>
+    <button id="copyBtn" class="btn">Copy Cookie</button>
+  </div>
+  <div id="msg" class="msg"></div>
+
+  <!-- Pengaturan Target -->
+  <div class="card" style="margin-top:10px;margin-bottom:0;">
+    <div class="field">
+      <label>URL Dashboard / VPS</label>
+      <input id="serverUrl" type="text" placeholder="http://127.0.0.1:3030" />
+    </div>
+    <div class="field">
+      <label>Secret (opsional untuk lokal, wajib jika pakai DASHBOARD_SECRET)</label>
+      <input id="secret" type="password" placeholder="Kosongkan jika lokal tanpa secret" />
+    </div>
+    <label class="chk-row">
+      <input id="autoSync" type="checkbox" checked />
+      Auto-sync otomatis setelah Login Google
+    </label>
+    <label class="chk-row">
+      <input id="autoCloseTab" type="checkbox" />
+      Tutup tab rierbux.com otomatis setelah sync
+    </label>
+    <button id="saveBtn" class="btn" style="margin-top:8px;">Simpan Pengaturan</button>
+    <div class="hint">Tip: Klik <strong>Login Google</strong> → pilih akun Google kamu → begitu masuk beranda RierBux, cookie sesi HttpOnly otomatis terkirim!</div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

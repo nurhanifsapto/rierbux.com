@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "RierBux Session Sync (Google OAuth)",
+  "version": "1.0.0",
+  "description": "Tangkap cookie sesi rierbux.com (termasuk login Google OAuth / HttpOnly) dan kirim otomatis ke Dashboard Lokal atau VPS Dokploy.",
+  "permissions": [
+    "cookies",
+    "storage",
+    "alarms",
+    "notifications",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://rierbux.com/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*",
+    "https://*/*",
+    "http://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "RierBux Session Sync",
+    "default_popup": "popup.html"
+  }
+}

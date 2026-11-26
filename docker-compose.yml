@@ -1,0 +1,26 @@
+services:
+  rierbux-worker:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${HEALTH_PORT:-3030}:3030"
+    environment:
+      - TZ=Asia/Jakarta
+      - RIERBUX_DATA_DIR=/app/data
+      - RIERBUX_BASE_URL=${RIERBUX_BASE_URL:-https://rierbux.com}
+      - RIERBUX_EMAIL=${RIERBUX_EMAIL:-}
+      - RIERBUX_PASSWORD=${RIERBUX_PASSWORD:-}
+      - RIERBUX_API_KEY=${RIERBUX_API_KEY:-}
+      - RIERBUX_SESSION_COOKIES=${RIERBUX_SESSION_COOKIES:-}
+      - GSHEET_WEBHOOK_URL=${GSHEET_WEBHOOK_URL:-}
+      - GSHEET_SECRET=${GSHEET_SECRET:-}
+      - WEBHOOK_CALLBACK_URL=${WEBHOOK_CALLBACK_URL:-}
+      - DASHBOARD_SECRET=${DASHBOARD_SECRET:-}
+      - POLL_INTERVAL_MS=${POLL_INTERVAL_MS:-5000}
+      - HEALTH_PORT=3030
+      - DASHBOARD_HOST=0.0.0.0
+    volumes:
+      - rierbux_data:/app/data
+
+volumes:
+  rierbux_data:

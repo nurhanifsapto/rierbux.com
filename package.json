@@ -1,0 +1,29 @@
+{
+  "name": "rierbux-cli",
+  "version": "1.0.0",
+  "description": "All-in-One CLI, Web Console & Webhook Worker for rierbux.com (mirip IDV)",
+  "main": "rierbux.js",
+  "bin": {
+    "rierbux": "./rierbux.js"
+  },
+  "scripts": {
+    "start": "node rierbux.js",
+    "dashboard": "node rierbux.js dashboard",
+    "web": "node rierbux.js dashboard",
+    "worker": "node rierbux.js worker",
+    "ping-sheet": "node rierbux.js ping-sheet",
+    "login": "node rierbux.js login",
+    "logout": "node rierbux.js logout",
+    "balance": "node rierbux.js balance",
+    "stock": "node rierbux.js stock",
+    "list": "node rierbux.js list",
+    "sync": "node rierbux.js sync",
+    "buy": "node rierbux.js buy",
+    "cart": "node rierbux.js cart",
+    "orders": "node rierbux.js orders",
+    "history": "node rierbux.js history"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7"
+  }
+}

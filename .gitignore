@@ -1,0 +1,9 @@
+node_modules/
+.env
+.session
+.action-cache.json
+transactions.json
+products.json
+api-capture-*.json
+*.har
+*.log
