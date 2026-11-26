@@ -1,4 +1,4 @@
-const DEFAULT_SERVER = "http://127.0.0.1:3030";
+const DEFAULT_SERVER = "https://rierbux.noircheck.my.id";
 const SESSION_COOKIE_NAME = "__Secure-rierbux.session_token";
 const NOTIF_ICON =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";

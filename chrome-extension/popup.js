@@ -49,7 +49,7 @@ function refreshStatus() {
 
 async function init() {
   const cfg = await chrome.storage.local.get(["serverUrl", "secret", "autoSync", "autoCloseTab", "lastPushAt"]);
-  $("serverUrl").value = cfg.serverUrl || "http://127.0.0.1:3030";
+  $("serverUrl").value = cfg.serverUrl || "https://rierbux.noircheck.my.id";
   $("secret").value = cfg.secret || "";
   $("autoSync").checked = cfg.autoSync !== false;
   $("autoCloseTab").checked = Boolean(cfg.autoCloseTab);
@@ -59,7 +59,7 @@ async function init() {
 
 $("saveBtn").addEventListener("click", async () => {
   await chrome.storage.local.set({
-    serverUrl: $("serverUrl").value.trim() || "http://127.0.0.1:3030",
+    serverUrl: $("serverUrl").value.trim() || "https://rierbux.noircheck.my.id",
     secret: $("secret").value.trim(),
     autoSync: $("autoSync").checked,
     autoCloseTab: $("autoCloseTab").checked,
