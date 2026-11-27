@@ -1228,7 +1228,7 @@ function buildDashboardHtml({ requireSecret = false } = {}) {
             <option value="">Semua Tipe</option>
             <option value="usage">Pembayaran (usage)</option>
             <option value="topup">Top Up</option>
-            <option value="topup_bonus">Bonus Top Up</option>
+            <option value="bonus">Bonus Top Up</option>
             <option value="refund">Refund</option>
             <option value="adjustment">Adjustment</option>
           </select>

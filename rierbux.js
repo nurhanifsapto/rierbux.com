@@ -992,33 +992,39 @@ class RierBuxBot {
   async getCoinTransactions({ page = 1, limit = 20, type } = {}) {
     const pg = Math.max(1, Number(page) || 1);
     const lim = Math.max(1, Math.min(100, Number(limit) || 20));
+    const normType = type === "topup_bonus" ? "bonus" : type;
+
     if (this.apiKey) {
-      const res = await this.fetchV1("/api/v1/riercoins/transactions", { page: pg, limit: lim, type });
-      const p = res.data.pagination || {};
-      return {
-        transactions: res.data.transactions || [],
-        pagination: {
-          page: p.page || pg,
-          limit: p.limit || lim,
-          totalItems: p.totalItems ?? (res.data.transactions || []).length,
-          totalPages: p.totalPages || 1,
-          hasNextPage: Boolean(p.hasNextPage),
-          hasPrevPage: (p.page || pg) > 1,
-        },
-        source: "api_v1",
-      };
+      try {
+        const res = await this.fetchV1("/api/v1/riercoins/transactions", { page: pg, limit: lim, type: normType });
+        const list = res.data?.transactions || res.data?.items || [];
+        const p = res.data?.pagination || {};
+        if (list.length > 0 || this.jar.size() === 0) {
+          return {
+            transactions: list,
+            pagination: {
+              page: p.page || pg,
+              limit: p.limit || lim,
+              totalItems: p.totalItems ?? list.length,
+              totalPages: p.totalPages || Math.max(1, Math.ceil((p.totalItems ?? list.length) / lim)),
+              hasNextPage: p.hasNextPage !== undefined ? Boolean(p.hasNextPage) : pg < (p.totalPages || 1),
+              hasPrevPage: (p.page || pg) > 1,
+            },
+            source: "api_v1",
+          };
+        }
+      } catch {}
     }
-    // Fallback CSV export via Server Action (punya seluruh riwayat mutasi!)
-    const res = await this.callServerAction("/coins", "exportTransactionsCsvAction", {
-      type: type || "$undefined",
-      date: "$undefined",
-      fromDate: "$undefined",
-      toDate: "$undefined",
-    });
-    const csv = res.data?.csv || res.textPayload || "";
+
+    // Fallback CSV export via Server Action (punya seluruh riwayat mutasi lengkap!)
+    const actionPayload = {};
+    if (normType) actionPayload.type = normType;
+    const res = await this.callServerAction("/coins", "exportTransactionsCsvAction", actionPayload);
+    const rawCsv = res.data?.data?.csv || res.data?.csv || res.textPayload || "";
+    const csv = String(rawCsv).replace(/^\uFEFF/, "");
     const rows = parseCsv(csv);
     const allTx = rows.map((r) => ({
-      createdAt: r["Tanggal"] || "",
+      createdAt: r["Tanggal"] || r["\uFEFFTanggal"] || "",
       type: r["Tipe"] || "",
       amount: parseInt(String(r["Jumlah"] || "0").replace(/[^\d\-]/g, ""), 10) || 0,
       description: r["Deskripsi"] || "",
