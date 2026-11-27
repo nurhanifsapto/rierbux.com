@@ -621,6 +621,13 @@ function createDashboardServer(bot, { port = 3030, host = "127.0.0.1", secret = 
         return sendJson(res, 200, { ok: true, ...det });
       }
 
+      if (req.method === "GET" && pathname === "/api/order-status") {
+        if (!checkAuth(req, res)) return;
+        const id = u.searchParams.get("id");
+        const status = await bot.getOrderStatus(id);
+        return sendJson(res, 200, { ok: true, status });
+      }
+
       if (req.method === "POST" && pathname === "/api/order-action") {
         const body = await readJsonBody(req);
         if (!checkAuth(req, res, body.secret)) return;
@@ -643,6 +650,16 @@ function createDashboardServer(bot, { port = 3030, host = "127.0.0.1", secret = 
         if (action === "retry") {
           const out = await bot.retryFailedItem(publicId, orderItemId);
           pushLog("info", `🔁 Retry item #${orderItemId} di order #${publicId}.`);
+          return sendJson(res, 200, { ok: true, data: out });
+        }
+        if (action === "review") {
+          const out = await bot.createReview({
+            publicId,
+            orderItemId,
+            rating: body.rating || 5,
+            description: body.description || "",
+          });
+          pushLog("ok", `⭐ Review dikirim untuk item #${orderItemId} (bonus: ${out?.bonusAmount ?? 0} RC)`);
           return sendJson(res, 200, { ok: true, data: out });
         }
         throw new Error(`Action tidak dikenal: ${action}`);

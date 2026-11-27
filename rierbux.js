@@ -110,6 +110,7 @@ const DEFAULT_ACTION_IDS = {
   createPaymentAction: "7fee7ff305d73bd85fa7006d44b0c2369d2c94e772",
   cancelUnpaidOrderAction: "7f317dee41f9013a6fd578ea59cec2dea153cabf4a",
   retryFailedItemAction: "7f9b7995c0c11309c939654d915ab012e02018acd0",
+  createReviewAction: "7f8be9c253e4a04feb41cab9b9fd68fbb67cbe7300",
   exportOrdersCsvAction: "7f850b65ea35ae21c451c1357eccf18f0a85348faa",
 
   // RierCoins
@@ -1971,23 +1972,139 @@ class RierBuxBot {
     };
   }
 
+  async getOrderStatus(publicId) {
+    const cleanId = String(publicId || "").replace(/^#/, "").trim();
+    if (!cleanId) throw new Error("publicId order wajib diisi.");
+    const r = await this.fetchJson(`/api/orders/status?publicId=${encodeURIComponent(cleanId)}`, { requireAuth: true });
+    if (!r.ok || !r.json?.data) throw new Error(`Gagal cek status order (HTTP ${r.status})`);
+    return r.json.data;
+  }
+
+  async createReview({ publicId, orderItemId, rating = 5, description = "" }) {
+    const payload = { orderItemId: Number(orderItemId), rating: Number(rating) || 5 };
+    if (description) payload.description = String(description).trim();
+    const res = await this.callServerAction(`/orders/${publicId}`, "createReviewAction", payload);
+    return res.data;
+  }
+
   async getOrderDetail(publicId) {
     const cleanId = String(publicId || "").replace(/^#/, "").trim();
-    if (!cleanId) throw new Error("publicId order wajib diisi (contoh: RB-R4ZEBZTUY0IB6).");
+    if (!cleanId) throw new Error("publicId order wajib diisi (contoh: RB-GG5KDYF04Z8AE).");
 
+    let v1Order = null;
     if (this.apiKey) {
       try {
         const res = await this.fetchV1(`/api/v1/orders/${encodeURIComponent(cleanId)}`);
-        return { order: res.data, source: "api_v1" };
+        v1Order = res.data;
       } catch (err) {
         if (err.code !== "invalid_api_key" && err.code !== "missing_api_key") throw err;
       }
     }
 
-    const { rsc } = await this.fetchPageRsc(`/orders/${encodeURIComponent(cleanId)}`, { requireAuth: true });
-    const ordersObj = findAllJsonValuesByKey(rsc, "order").find((o) => o && (o.publicId === cleanId || o.id));
-    const paymentMethods = findAllJsonValuesByKey(rsc, "paymentMethods").find((a) => Array.isArray(a)) || [];
-    return { order: ordersObj || { id: cleanId, rawFound: false }, paymentMethods, source: "rsc" };
+    // Parse RSC detail lengkap (punya icon item, deliveryInfo, link Private Server, paymentUrl, diskon, dll!)
+    let rscData = null;
+    let paymentMethods = [];
+    try {
+      if (this.jar.size() > 0 || !v1Order) {
+        const { rsc } = await this.fetchPageRsc(`/orders/${encodeURIComponent(cleanId)}`, { requireAuth: true });
+        paymentMethods = (findAllJsonValuesByKey(rsc, "paymentMethods").find((a) => Array.isArray(a)) || []).map((pm) => ({
+          ...pm,
+          imageUrl: toUploadUrl(pm.imagePath),
+        }));
+
+        const payStatusM = rsc.match(/"initialPaymentStatus":"([^"]+)"/);
+        const refundM = rsc.match(/"initialRefundedAmount":(\d+)/);
+        const duitkuRefM = rsc.match(/"duitkuReference":(?:"([^"]+)"|null)/);
+        const payUrlM = rsc.match(/"paymentUrl":"(https?:\/\/[^"]+)"/);
+        const payFeeM = rsc.match(/"paymentFee":(\d+)/);
+        const expAtM = rsc.match(/"expiredAt":"\$?D?([^"]+)"/);
+        const promoM = rsc.match(/"promoCode":"([^"]+)"/);
+        const createdM = rsc.match(/"utcDate":"\$?D?([^"]+)"/) || rsc.match(/"createdAt":"\$?D?([^"]+)"/);
+
+        // Ekstrak semua orderItem (dari ReviewButton / StickyPaymentBar)
+        const rawItems = findAllJsonValuesByKey(rsc, "orderItem").filter((o) => o && typeof o === "object" && o.id);
+        const stickyItems = findAllJsonValuesByKey(rsc, "orderItems").find((a) => Array.isArray(a) && a.length > 0) || [];
+        const inputInfos = findAllJsonValuesByKey(rsc, "orderInputInfo");
+        const deliveryInfos = findAllJsonValuesByKey(rsc, "deliveryInfo");
+
+        const itemSource = rawItems.length ? rawItems : stickyItems;
+        const seenIds = new Set();
+        const items = [];
+        itemSource.forEach((it, idx) => {
+          if (!it || seenIds.has(it.id)) return;
+          seenIds.add(it.id);
+          const inp = inputInfos[idx] || null;
+          const deliv = deliveryInfos.find((d) => d && d.orderItemId === it.id) || deliveryInfos[idx] || null;
+          const totalPrice = Number(it.totalPrice ?? 0);
+          const itemDisc = Number(it.itemDiscount ?? 0);
+          const promoDisc = Number(it.promoCodeDiscount ?? 0);
+          const memDisc = Number(it.membershipDiscount ?? 0);
+          items.push({
+            id: it.id,
+            product: it.productName || "-",
+            item: it.itemName || "-",
+            imageUrl: toUploadUrl(it.itemImagePath),
+            quantity: Number(it.quantity ?? 1),
+            handler: it.handler || null,
+            status: it.status || "-",
+            deliveredAt: typeof it.deliveredAt === "string" ? it.deliveredAt.replace(/^\$D/, "") : it.deliveredAt || null,
+            totalPrice,
+            discounts: { item: itemDisc, promoCode: promoDisc, membership: memDisc },
+            netPrice: Math.max(0, totalPrice - itemDisc - promoDisc - memDisc),
+            inputs: inp,
+            deliveryInfo: deliv
+              ? {
+                  ...deliv,
+                  deliveredAt: typeof deliv.deliveredAt === "string" ? deliv.deliveredAt.replace(/^\$D/, "") : deliv.deliveredAt,
+                  expirationDate: typeof deliv.expirationDate === "string" ? deliv.expirationDate.replace(/^\$D/, "") : deliv.expirationDate,
+                  approvalDeadline: typeof deliv.approvalDeadline === "string" ? deliv.approvalDeadline.replace(/^\$D/, "") : deliv.approvalDeadline,
+                }
+              : null,
+          });
+        });
+
+        const subtotal = items.reduce((s, it) => s + Number(it.netPrice || 0), 0);
+        const paymentFee = payFeeM ? Number(payFeeM[1]) : 0;
+        rscData = {
+          id: cleanId,
+          paymentStatus: payStatusM ? payStatusM[1] : null,
+          refundedAmount: refundM ? Number(refundM[1]) : 0,
+          duitkuReference: duitkuRefM ? duitkuRefM[1] || null : null,
+          paymentUrl: payUrlM ? payUrlM[1] : null,
+          paymentFee,
+          promoCode: promoM ? promoM[1] : null,
+          paymentExpiredAt: expAtM ? expAtM[1] : null,
+          createdAt: createdM ? createdM[1] : null,
+          subtotal,
+          total: subtotal + paymentFee,
+          items,
+        };
+      }
+    } catch {}
+
+    if (v1Order) {
+      // Gabungkan data lengkap v1 + enrichment dari RSC (imageUrl, deliveryInfo, paymentUrl, refundedAmount)
+      if (rscData) {
+        const rscById = new Map((rscData.items || []).map((x) => [x.id, x]));
+        v1Order.refundedAmount = rscData.refundedAmount ?? 0;
+        v1Order.paymentUrl = rscData.paymentUrl || null;
+        v1Order.duitkuReference = rscData.duitkuReference || null;
+        v1Order.promoCode = rscData.promoCode || null;
+        v1Order.items = (v1Order.items || []).map((it, idx) => {
+          const extra = rscById.get(it.id) || rscData.items?.[idx];
+          return {
+            ...it,
+            imageUrl: extra?.imageUrl || null,
+            handler: extra?.handler || it.deliveryMethod || null,
+            deliveryInfo: extra?.deliveryInfo || null,
+            inputs: { ...(extra?.inputs || {}), ...(it.inputs || {}) },
+          };
+        });
+      }
+      return { order: v1Order, paymentMethods, source: rscData ? "api_v1+rsc" : "api_v1" };
+    }
+
+    return { order: rscData || { id: cleanId, rawFound: false }, paymentMethods, source: "rsc" };
   }
 
   // ── 9. Private Server Controls ────────────────────────────────────────────

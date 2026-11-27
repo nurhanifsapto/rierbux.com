@@ -1591,20 +1591,57 @@ async function openOrderDetail(publicId) {
     const d = await api("/api/order-detail?id=" + encodeURIComponent(publicId));
     const o = d.order || {};
     const items = o.items || o.orderItems || [];
+    const discTotal = items.reduce((s, it) => s + Number(it.discounts?.item || 0) + Number(it.discounts?.promoCode || 0) + Number(it.discounts?.membership || 0), 0);
+    const isUnpaid = String(o.paymentStatus || "").toLowerCase() === "unpaid";
+
     let html = '<div class="summary" style="margin-top:0;">' +
-      '<div class="sum-row"><span class="muted">Status Bayar</span><strong>' + esc(o.paymentStatus || "-") + '</strong></div>' +
-      '<div class="sum-row"><span class="muted">Metode</span><span>' + esc(o.paymentMethod || "-") + '</span></div>' +
-      '<div class="sum-row"><span class="muted">Total</span><strong>' + fmtRp(o.total) + '</strong></div>' +
+      '<div class="sum-row"><span class="muted">Status Bayar</span><span class="tag ' + (o.paymentStatus === "paid" ? "ok" : isUnpaid ? "warn" : "") + '">' + esc(o.paymentStatus || "-") + '</span></div>' +
+      (o.paymentMethod ? '<div class="sum-row"><span class="muted">Metode Bayar</span><span>' + esc(o.paymentMethod) + '</span></div>' : '') +
+      (o.createdAt ? '<div class="sum-row"><span class="muted">Dibuat</span><span>' + esc(String(o.createdAt).slice(0, 19).replace("T", " ")) + '</span></div>' : '') +
+      (o.paidAt ? '<div class="sum-row"><span class="muted">Dibayar</span><span>' + esc(String(o.paidAt).slice(0, 19).replace("T", " ")) + '</span></div>' : '') +
+      (discTotal > 0 ? '<div class="sum-row"><span class="muted">Total Diskon</span><span style="color:var(--ok);">-' + fmtRp(discTotal) + '</span></div>' : '') +
+      '<div class="sum-row"><span class="muted">Biaya Admin</span><span>' + (o.paymentFee ? fmtRp(o.paymentFee) : 'Gratis') + '</span></div>' +
+      '<div class="sum-row total"><span>Total</span><span>' + fmtRp(o.total) + '</span></div>' +
+      (o.refundedAmount > 0 ? '<div class="sum-row"><span class="muted">Refunded RC</span><span style="color:var(--ok);">+' + fmtNum(o.refundedAmount) + ' RC</span></div>' : '') +
+      (o.paymentUrl ? '<div class="sum-row"><span class="muted">Link Pembayaran</span><a class="ext" target="_blank" href="' + esc(o.paymentUrl) + '">Bayar Duitku ↗</a></div>' : '') +
       '<div class="sum-row"><span class="muted">Halaman RierBux</span><a class="ext" target="_blank" href="https://rierbux.com/orders/' + esc(publicId) + '">Buka di Web ↗</a></div></div>';
+
+    if (isUnpaid) {
+      html += '<div class="btn-row" style="margin-bottom:12px;"><button class="btn btn-primary btn-sm" onclick="ordAct(\\'pay_balance\\',\\'' + esc(publicId) + '\\')">Bayar RierCoins</button><button class="btn btn-danger btn-sm" onclick="ordAct(\\'cancel\\',\\'' + esc(publicId) + '\\')">Batalkan Order</button></div>';
+    }
 
     if (items.length) {
       html += '<div style="font-weight:600;margin-bottom:6px;">Items (' + items.length + ')</div>';
       html += items.map(it => {
         const failed = String(it.status || "").toLowerCase() === "failed";
-        return '<div class="summary" style="margin:6px 0;">' +
-          '<div class="sum-row"><strong>' + esc(it.product || it.productName) + ' · ' + esc(it.item || it.itemName) + ' ×' + (it.quantity || 1) + '</strong><span class="tag">' + esc(it.status || "-") + '</span></div>' +
-          (it.inputs?.robloxUsername ? '<div class="sum-row"><span class="muted">Roblox</span><span>' + esc(it.inputs.robloxUsername) + '</span></div>' : '') +
-          '<div class="sum-row"><span class="muted">Harga</span><span>' + fmtRp(it.netPrice ?? it.totalPrice) + '</span></div>' +
+        const deliv = it.deliveryInfo || null;
+        const inp = it.inputs || {};
+        const rbxProfile = inp.robloxUserId ? 'https://www.roblox.com/users/' + inp.robloxUserId + '/profile' : null;
+        let delivHtml = '';
+        if (deliv?.link) {
+          delivHtml += '<div class="sum-row"><span class="muted">Link Private Server</span><a class="ext" target="_blank" href="' + esc(deliv.link) + '">Buka Server ↗</a></div>';
+          if (deliv.expirationDate) delivHtml += '<div class="sum-row"><span class="muted">Berlaku s/d</span><span>' + esc(String(deliv.expirationDate).slice(0, 16).replace("T", " ")) + '</span></div>';
+          if (it.id) {
+            delivHtml += '<div class="btn-row" style="margin-top:6px;">' +
+              '<button class="btn btn-sm" onclick="psControl(\\'regenerate\\',\\'' + esc(publicId) + '\\',' + it.id + ')">Regenerate Link</button>' +
+              '<button class="btn btn-danger btn-sm" onclick="psControl(\\'shutdown\\',\\'' + esc(publicId) + '\\',' + it.id + ')">Shutdown PS</button></div>';
+          }
+        } else if (it.handler === "robux-5d" && (deliv?.deliveredAt || it.deliveredAt)) {
+          delivHtml += '<div class="sum-row"><span class="muted">Robux Pending</span><a class="ext" target="_blank" href="https://www.roblox.com/transactions">Cek Transactions Roblox ↗</a></div>';
+        } else if (deliv?.approvalDeadline) {
+          delivHtml += '<div class="sum-row"><span class="muted">Batas Izin Ortu</span><span>' + esc(String(deliv.approvalDeadline).slice(0, 16).replace("T", " ")) + '</span></div>';
+        }
+
+        return '<div class="summary" style="margin:7px 0;">' +
+          '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">' +
+          (it.imageUrl ? '<img class="item-icon" src="' + esc(it.imageUrl) + '" style="width:36px;height:36px;" />' : '') +
+          '<div style="flex:1;min-width:0;"><div style="font-weight:600;font-size:12.5px;">' + esc(it.product || it.productName) + ' · ' + esc(it.item || it.itemName) + ' ×' + (it.quantity || 1) + '</div>' +
+          '<div class="muted">' + esc(it.handler || it.deliveryMethod || "") + (it.deliveredAt ? ' · Dikirim ' + esc(String(it.deliveredAt).slice(0, 16).replace("T", " ")) : '') + '</div></div>' +
+          '<span class="tag ' + (it.status === "delivered" ? "ok" : failed ? "err" : "") + '">' + esc(it.status || "-") + '</span></div>' +
+          (inp.robloxUsername ? '<div class="sum-row"><span class="muted">Roblox</span><span>' + (rbxProfile ? '<a class="ext" target="_blank" href="' + rbxProfile + '">@' + esc(inp.robloxUsername) + ' ↗</a>' : '@' + esc(inp.robloxUsername)) + '</span></div>' : '') +
+          (inp.smallName ? '<div class="sum-row"><span class="muted">Tumbal Limited</span><span>' + esc(inp.smallName) + ' (UAID ' + esc(inp.smallUaid || "-") + ')</span></div>' : '') +
+          '<div class="sum-row"><span class="muted">Harga Bersih</span><strong>' + fmtRp(it.netPrice ?? it.totalPrice) + '</strong></div>' +
+          delivHtml +
           (it.failureReason ? '<div style="color:var(--err);font-size:12px;margin-top:4px;">Error: ' + esc(it.failureReason) + '</div>' : '') +
           (failed && it.id ? '<div class="btn-row" style="margin-top:6px;"><button class="btn btn-sm" onclick="retryItem(\\'' + esc(publicId) + '\\',' + it.id + ')">Retry Pengiriman</button></div>' : '') +
           '</div>';
@@ -1612,6 +1649,16 @@ async function openOrderDetail(publicId) {
     }
     document.getElementById("dmContent").innerHTML = html;
   } catch (err) { document.getElementById("dmContent").innerHTML = '<div style="color:var(--err);">' + esc(err.message) + '</div>'; }
+}
+
+async function psControl(action, publicId, orderItemId) {
+  const ok = await askModal({ title: "Kontrol Private Server", desc: "Jalankan '" + action + "' pada item #" + orderItemId + "?" });
+  if (!ok) return;
+  try {
+    await api("/api/ps-action", { method: "POST", body: JSON.stringify({ action, publicId, orderItemId }) });
+    toast("ok", "Private Server '" + action + "' berhasil!");
+    openOrderDetail(publicId);
+  } catch (err) { toast("err", esc(err.message)); }
 }
 
 async function retryItem(publicId, orderItemId) {
