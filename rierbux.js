@@ -110,7 +110,9 @@ const DEFAULT_ACTION_IDS = {
   createPaymentAction: "7fee7ff305d73bd85fa7006d44b0c2369d2c94e772",
   cancelUnpaidOrderAction: "7f317dee41f9013a6fd578ea59cec2dea153cabf4a",
   retryFailedItemAction: "7f9b7995c0c11309c939654d915ab012e02018acd0",
+  changeFailedItemRecipientAction: "7ffdfa0fb1681114376ddbe1aa4969fb2e86f46c7b",
   createReviewAction: "7f8be9c253e4a04feb41cab9b9fd68fbb67cbe7300",
+  toggleReviewHelpfulAction: "7f44d9b0309fbd836b55f0865ffefa26a0504fc6c4",
   exportOrdersCsvAction: "7f850b65ea35ae21c451c1357eccf18f0a85348faa",
 
   // RierCoins
@@ -127,12 +129,21 @@ const DEFAULT_ACTION_IDS = {
   addPrivateServerUserAction: "7fbbcdd1b978f6e8422f0c0d34837b1383cba490f8",
   removePrivateServerUserAction: "7f023fdec55d490874297ceb11c7de4f891b5ad9d8",
 
-  // Membership & Setup
+  // Membership, Profile, Security & Notifications
   createMembershipOrderAction: "7f43eaba45d00e714d2e08eb6f95565f331272959f",
   payMembershipWithBalanceAction: "7fb1c5e64ae5a5688093e585b8ca8906cedab03ac1",
   whatsAppSetupAction: "7f807081606783e3080b1017f888c7909f8a321036",
+  claimRankRewardAction: "7facbd8a0c61f9407369654b406a0dc9449b1d7e63",
+  updateProfileAction: "7fff8b94a4764b915094fa9ad477c06323fdf28164",
+  notifyPasswordChangedAction: "7f8103f3bc15ddec87f7d438f63d48bef7c9f5c1b4",
+  setPasswordAction: "7f35b0781066799a13d6894dc3f10b93119f34c4b7",
+  removePasswordAction: "7fceddef6cd3d5f4d2bcefd65181c3299f7afa4c17",
+  subscribePushAction: "7fa676bff384c6a50577a53606a165af59a51dde7b",
+  unsubscribePushAction: "7f5fd76d6623f5bba9c616546fd6485425cb068ca2",
+  updateEmailNotificationsAction: "7f1d66db50f2c40bf99c38a99ef6bd05177a8447ae",
+  updatePushNotificationsAction: "7fdd412d5a5db0f9c8d9817b98dc8efa286631109e",
 
-  // Chat Admin (Rier-chan)
+  // Chat Admin & Stickers (Rier-chan)
   sendChatMessageAction: "7ffaf766f0ceca679ad1e14207c993264d77de4c22",
   markChatReadAction: "7f9f4f0805f63ab4c956fb2ab7b71402dba95a290d",
   editChatMessageAction: "7f3a432fc5c2bd265a8a0ecc0e1cbfc2e98e0445dd",
@@ -140,6 +151,8 @@ const DEFAULT_ACTION_IDS = {
   setChatMessagePinnedAction: "7f76658b8cde985650b2eccd7360b23878fa521626",
   saveStickerFromMessageAction: "7f35780f912e31241ffc7fdbbbe11a982d799269fb",
   unsaveStickerFromMessageAction: "7f21b8a4d45db735b0efd8e4d063b3855d1a883c7a",
+  createPersonalStickersAction: "7faae602a51e45c64212b6ed7fb35e13e320bbd12c",
+  deletePersonalStickerAction: "7f491329a05817d58d6aaa05c35b557f022967cbbb",
 };
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
@@ -704,7 +717,13 @@ class RierBuxBot {
     "/cart",
     "/coins",
     "/orders",
+    "/chat",
+    "/profile",
+    "/reviews",
     "/settings/api",
+    "/settings/profile",
+    "/settings/security",
+    "/settings/notifications",
   ]) {
     const chunkUrls = new Set();
     for (const p of pages) {
@@ -2308,6 +2327,291 @@ class RierBuxBot {
     if (!res.ok) throw new Error(`Gagal muat media chat (HTTP ${res.status})`);
     const buf = Buffer.from(await res.arrayBuffer());
     return { buffer: buf, contentType: res.headers.get("content-type") || "application/octet-stream" };
+  }
+
+  // ── 11. Extended Order Recovery, Reviews, Leaderboard, Profile, Membership, Security & Stickers ──
+  /** Upload file generik ke Better Upload (/api/upload) untuk chat-images, chat-sticker-images, review-images, profile-images */
+  async uploadFile({ route = "review-images", filename = "image.png", mimeType = "image/png", buffer, metadata = {} }) {
+    if (!Buffer.isBuffer(buffer) || buffer.length === 0) throw new Error("File kosong.");
+    const maxBytes = route === "chat-sticker-images" ? 1024 * 1024 : 3 * 1024 * 1024;
+    if (buffer.length > maxBytes) throw new Error(`Ukuran file maks ${Math.round(maxBytes / 1024 / 1024)} MB.`);
+    const presign = await this.fetchJson("/api/upload", {
+      method: "POST",
+      requireAuth: true,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        route,
+        metadata,
+        files: [{ name: filename, size: buffer.length, type: mimeType }],
+      }),
+    });
+    if (!presign.ok || !presign.json) throw new Error(`Gagal presign upload (HTTP ${presign.status})`);
+    const first = (presign.json.files || presign.json.data?.files || [])[0];
+    if (!first?.signedUrl) throw new Error("Response presign tidak berisi signedUrl.");
+    const key = first.file?.objectInfo?.key || first.objectInfo?.key || first.key;
+    const putRes = await fetch(first.signedUrl, {
+      method: "PUT",
+      headers: { "content-type": mimeType, ...(first.headers || {}) },
+      body: buffer,
+    });
+    if (!putRes.ok) throw new Error(`Gagal upload file ke R2 (HTTP ${putRes.status})`);
+    return { key, url: toUploadUrl(key) };
+  }
+
+  /** Ganti username Roblox tujuan untuk item order yang gagal */
+  async changeFailedItemRecipient({ publicId, orderItemId, robloxUsername, parentApprovalAcknowledged }) {
+    const check = await this.checkRobloxUsername(robloxUsername);
+    if (!check?.valid || !check?.user) {
+      throw new Error(`Username Roblox '${robloxUsername}' tidak ditemukan.`);
+    }
+    const payload = {
+      orderItemId: Number(orderItemId),
+      robloxUsername: check.user.username,
+      robloxUserId: Number(check.user.id),
+      robloxDisplayName: check.user.displayName || check.user.username,
+    };
+    if (parentApprovalAcknowledged) payload.parentApprovalAcknowledged = true;
+    const res = await this.callServerAction(`/orders/${publicId}`, "changeFailedItemRecipientAction", payload);
+    if (res.data?.serverError) throw new Error(res.data.serverError);
+    return { ...res.data, user: check.user };
+  }
+
+  /** Ambil antrean Add Friend (untuk akun Roblox di bawah umur yang perlu add friend bot delivery) */
+  async getAddFriendQueue() {
+    const { rsc } = await this.fetchPageRsc("/orders/add-friend", { requireAuth: true });
+    const queues = findAllJsonValuesByKey(rsc, "items").find((a) => Array.isArray(a)) ||
+      findAllJsonValuesByKey(rsc, "orders").find((a) => Array.isArray(a)) || [];
+    const accounts = findAllJsonValuesByKey(rsc, "deliveryAccounts").find((a) => Array.isArray(a)) || [];
+    return { items: queues, deliveryAccounts: accounts };
+  }
+
+  /** Leaderboard pembeli RierBux (/api/leaderboard) */
+  async getLeaderboard() {
+    const r = await this.fetchJson("/api/leaderboard", { requireAuth: false });
+    if (!r.ok || !r.json?.data) throw new Error(`Gagal ambil leaderboard (HTTP ${r.status})`);
+    const data = r.json.data;
+    const entries = data.leaderboard?.entries || data.entries || [];
+    entries.forEach((e) => {
+      if (e.image && !e.image.startsWith("http")) e.imageUrl = toUploadUrl(e.image);
+      else e.imageUrl = e.image || null;
+    });
+    return data;
+  }
+
+  /** Reviews publik per produk atau handler (/api/reviews) */
+  async getReviews({ productId, handlerIds, page = 1, limit = 10 } = {}) {
+    const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (productId) qs.set("productId", String(productId));
+    if (handlerIds) qs.set("handlerIds", String(handlerIds));
+    const r = await this.fetchJson(`/api/reviews?${qs.toString()}`, { requireAuth: false });
+    if (!r.ok || !r.json?.data) throw new Error(`Gagal ambil reviews (HTTP ${r.status})`);
+    const data = r.json.data;
+    (data.reviews || []).forEach((rv) => {
+      if (rv.imagePath) rv.imageUrl = toUploadUrl(rv.imagePath);
+      if (rv.itemImagePath) rv.itemImageUrl = toUploadUrl(rv.itemImagePath);
+    });
+    return data;
+  }
+
+  /** Toggle tombol helpful pada review */
+  async toggleReviewHelpful(reviewId) {
+    const res = await this.callServerAction("/reviews", "toggleReviewHelpfulAction", { reviewId: Number(reviewId) });
+    if (res.data?.serverError) throw new Error(res.data.serverError);
+    return res.data;
+  }
+
+  /** Profil user, Rank saat ini, progres belanja, & hadiah rank (/profile & /settings/profile) */
+  async getProfileOverview() {
+    const [profRes, setRes] = await Promise.all([
+      this.fetchPageRsc("/profile", { requireAuth: true }).catch(() => ({ rsc: "" })),
+      this.fetchPageRsc("/settings/profile", { requireAuth: true }).catch(() => ({ rsc: "" })),
+    ]);
+    const rsc = profRes.rsc || "";
+    const srsc = setRes.rsc || "";
+    const ranks = findAllJsonValuesByKey(rsc, "ranks").find((a) => Array.isArray(a) && a.length > 0) || [];
+    const rewards = findAllJsonValuesByKey(rsc, "rewards").find((a) => Array.isArray(a)) || [];
+    const currentRank = findAllJsonValuesByKey(rsc, "currentRank").find((o) => o && typeof o === "object") || null;
+    const totalSpentMatch = rsc.match(/"totalPurchases":(\d+)/) || rsc.match(/"totalSpent":(\d+)/);
+    const waMatch = srsc.match(/"whatsAppNumber":(?:"([^"]*)"|null)/);
+    const pubMatch = srsc.match(/"isNamePublic":(true|false)/);
+    const session = await this.getSession().catch(() => null);
+    return {
+      user: session?.user || this.session?.user || null,
+      totalPurchases: totalSpentMatch ? Number(totalSpentMatch[1]) : null,
+      currentRank,
+      ranks,
+      rewards,
+      whatsAppNumber: waMatch ? (waMatch[1] || null) : null,
+      isNamePublic: pubMatch ? pubMatch[1] === "true" : true,
+    };
+  }
+
+  async claimRankReward(rankId) {
+    const res = await this.callServerAction("/profile", "claimRankRewardAction", { rankId: Number(rankId) });
+    if (res.data?.serverError) throw new Error(res.data.serverError);
+    return res.data;
+  }
+
+  async updateProfile({ name, email, whatsAppNumber = null, isNamePublic = true }) {
+    const res = await this.callServerAction("/settings/profile", "updateProfileAction", {
+      name: String(name || "").trim(),
+      email: String(email || "").trim(),
+      whatsAppNumber: whatsAppNumber ? String(whatsAppNumber).trim() : null,
+      isNamePublic: Boolean(isNamePublic),
+    });
+    if (res.data?.serverError) throw new Error(res.data.serverError);
+    return res.data;
+  }
+
+  async setupWhatsApp(whatsAppNumber) {
+    const res = await this.callServerAction("/coins", "whatsAppSetupAction", {
+      whatsAppNumber: String(whatsAppNumber || "").trim(),
+    });
+    if (res.data?.serverError) throw new Error(res.data.serverError);
+    return res.data;
+  }
+
+  /** Membership tiers, pembelian, & Daftar Server Member (/membership & /membership/game-servers) */
+  async getMembership() {
+    const { rsc } = await this.fetchPageRsc("/membership", { requireAuth: true });
+    const tiers = findAllJsonValuesByKey(rsc, "tiers").find((a) => Array.isArray(a) && a.length > 0) || [];
+    const activeMembership = findAllJsonValuesByKey(rsc, "activeMembership").find((o) => o && typeof o === "object") ||
+      findAllJsonValuesByKey(rsc, "currentMembership").find((o) => o && typeof o === "object") || null;
+    const paymentMethods = (findAllJsonValuesByKey(rsc, "paymentMethods").find((a) => Array.isArray(a) && a.length > 0) || []).map((pm) => ({
+      ...pm,
+      imageUrl: toUploadUrl(pm.imagePath),
+    }));
+    return { activeMembership, tiers, paymentMethods };
+  }
+
+  async payMembershipWithBalance(tierId) {
+    const res = await this.callServerAction("/membership", "payMembershipWithBalanceAction", { tierId: Number(tierId) });
+    if (res.data?.serverError) throw new Error(res.data.serverError);
+    return res.data;
+  }
+
+  async createMembershipOrder(tierId, paymentMethodId) {
+    const res = await this.callServerAction("/membership", "createMembershipOrderAction", {
+      tierId: Number(tierId),
+      paymentMethodId: Number(paymentMethodId),
+    });
+    if (res.data?.serverError) throw new Error(res.data.serverError);
+    return { ...res.data, redirectUrl: res.redirectUrl };
+  }
+
+  async getMemberGameServers() {
+    const { rsc } = await this.fetchPageRsc("/membership/game-servers", { requireAuth: true });
+    const servers = findAllJsonValuesByKey(rsc, "products").find((a) => Array.isArray(a) && a.length > 0) ||
+      findAllJsonValuesByKey(rsc, "servers").find((a) => Array.isArray(a)) || [];
+    return {
+      isMember: servers.length > 0,
+      servers: servers.map((s) => ({
+        ...s,
+        thumbnailUrl: toUploadUrl(s.thumbnailPath || s.imagePath),
+      })),
+    };
+  }
+
+  /** Notifikasi Email & Push (/settings/notifications) */
+  async getNotificationSettings() {
+    const { rsc } = await this.fetchPageRsc("/settings/notifications", { requireAuth: true });
+    const emailPrefs = findAllJsonValuesByKey(rsc, "emailNotifications").find((o) => o && typeof o === "object") ||
+      findAllJsonValuesByKey(rsc, "emailPrefs").find((o) => o && typeof o === "object") || null;
+    const pushPrefs = findAllJsonValuesByKey(rsc, "pushNotifications").find((o) => o && typeof o === "object") ||
+      findAllJsonValuesByKey(rsc, "pushPrefs").find((o) => o && typeof o === "object") || null;
+    return { email: emailPrefs, push: pushPrefs };
+  }
+
+  async updateEmailNotifications({ delivery = true, reminder = true, membership = true }) {
+    const res = await this.callServerAction("/settings/notifications", "updateEmailNotificationsAction", {
+      delivery: Boolean(delivery),
+      reminder: Boolean(reminder),
+      membership: Boolean(membership),
+    });
+    if (res.data?.serverError) throw new Error(res.data.serverError);
+    return res.data;
+  }
+
+  async updatePushNotifications({ chat = true, orders = true, refunds = true }) {
+    const res = await this.callServerAction("/settings/notifications", "updatePushNotificationsAction", {
+      chat: Boolean(chat),
+      orders: Boolean(orders),
+      refunds: Boolean(refunds),
+    });
+    if (res.data?.serverError) throw new Error(res.data.serverError);
+    return res.data;
+  }
+
+  /** Security & Sessions (Better Auth + Server Actions) */
+  async listActiveSessions() {
+    const r = await this.fetchJson("/api/auth/list-sessions", { requireAuth: true });
+    if (r.ok && Array.isArray(r.json)) return r.json;
+    const { rsc } = await this.fetchPageRsc("/settings/sessions", { requireAuth: true });
+    return findAllJsonValuesByKey(rsc, "sessions").find((a) => Array.isArray(a)) || [];
+  }
+
+  async revokeSession(token) {
+    const r = await this.fetchJson("/api/auth/revoke-session", {
+      method: "POST",
+      requireAuth: true,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    if (!r.ok) throw new Error(`Gagal revoke session (HTTP ${r.status})`);
+    return r.json;
+  }
+
+  async revokeOtherSessions() {
+    const r = await this.fetchJson("/api/auth/revoke-other-sessions", {
+      method: "POST",
+      requireAuth: true,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    if (!r.ok) throw new Error(`Gagal revoke other sessions (HTTP ${r.status})`);
+    return r.json;
+  }
+
+  async setPassword(newPassword, confirmNewPassword) {
+    const res = await this.callServerAction("/settings/security", "setPasswordAction", {
+      newPassword: String(newPassword),
+      confirmNewPassword: String(confirmNewPassword || newPassword),
+    });
+    if (res.data?.serverError) throw new Error(res.data.serverError);
+    return res.data;
+  }
+
+  async removePassword(currentPassword) {
+    const res = await this.callServerAction("/settings/security", "removePasswordAction", {
+      currentPassword: String(currentPassword),
+    });
+    if (res.data?.serverError) throw new Error(res.data.serverError);
+    return res.data;
+  }
+
+  /** Chat Stickers Management */
+  async saveStickerFromMessage(messageId) {
+    const res = await this.callServerAction("/chat", "saveStickerFromMessageAction", { messageId: Number(messageId) });
+    if (res.data?.serverError) throw new Error(res.data.serverError);
+    return res.data;
+  }
+
+  async unsaveStickerFromMessage(messageId) {
+    const res = await this.callServerAction("/chat", "unsaveStickerFromMessageAction", { messageId: Number(messageId) });
+    if (res.data?.serverError) throw new Error(res.data.serverError);
+    return res.data;
+  }
+
+  async createPersonalStickers(stickers) {
+    const res = await this.callServerAction("/chat", "createPersonalStickersAction", { stickers });
+    if (res.data?.serverError) throw new Error(res.data.serverError);
+    return res.data;
+  }
+
+  async deletePersonalSticker(id) {
+    const res = await this.callServerAction("/chat", "deletePersonalStickerAction", { id: Number(id) });
+    if (res.data?.serverError) throw new Error(res.data.serverError);
+    return res.data;
   }
 }
 

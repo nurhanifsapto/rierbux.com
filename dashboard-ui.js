@@ -781,6 +781,11 @@ function buildDashboardHtml({ requireSecret = false } = {}) {
     </div>
   </header>
 
+  <div id="storeNoticeBanner" class="notice-banner hidden" style="background:var(--badge-pos-bg);color:var(--badge-pos-fg);">
+    <span id="storeNoticeText"></span>
+    <span id="storeNoticeKind" class="pill on-brand" style="background:rgba(31,118,251,0.14);color:var(--brand-primary);">Info Toko</span>
+  </div>
+
   <div id="loginNotice" class="notice-banner hidden">
     <span>Sesi RierBux belum aktif. Login email/password atau sync cookie dari Chrome Extension agar bisa transaksi &amp; cek saldo.</span>
     <button class="btn-pill sm obsidian" onclick="go('account')">Login Sekarang</button>
@@ -1403,6 +1408,51 @@ function buildDashboardHtml({ requireSecret = false } = {}) {
         </button>
       </div>
     </div>
+
+    <div class="grid-2" style="margin-top:16px;">
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">Profil, Rank &amp; Hadiah</span>
+          <button class="btn-pill sm" onclick="loadAccountExtras()">Refresh</button>
+        </div>
+        <div id="profRankBox" class="summary-box" style="margin-top:0;">
+          <div class="muted">Klik Refresh untuk memuat info Rank &amp; Profil.</div>
+        </div>
+        <div class="field"><label>Nama Tampilan</label><input id="profName" class="inp" placeholder="Nama akun" /></div>
+        <div class="field"><label>Email</label><input id="profEmail" class="inp" type="email" placeholder="email@gmail.com" /></div>
+        <div class="field"><label>Nomor WhatsApp</label><input id="profWa" class="inp" placeholder="08xxxxxxxxxx" /></div>
+        <div class="field" style="display:flex;align-items:center;gap:8px;">
+          <input id="profPub" type="checkbox" style="width:auto;" />
+          <label for="profPub" style="margin:0;cursor:pointer;">Tampilkan nama di Leaderboard publik</label>
+        </div>
+        <button class="btn-pill obsidian" style="width:100%;" onclick="saveProfileNow()">Simpan Profil</button>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">Membership, Notifikasi &amp; Sesi</span>
+          <button class="btn-pill sm danger" onclick="revokeOtherSessionsNow()">Cabut Sesi Lain</button>
+        </div>
+        <div id="memberBox" class="summary-box" style="margin-top:0;">
+          <div class="muted">Memuat info Membership...</div>
+        </div>
+        <div style="font-weight:600;font-size:12.5px;margin:10px 0 6px;">Notifikasi Email</div>
+        <div class="btn-row" style="margin-bottom:10px;">
+          <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;"><input id="neDeliv" type="checkbox" checked /> Delivery</label>
+          <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;"><input id="neRem" type="checkbox" checked /> Reminder</label>
+          <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;"><input id="neMem" type="checkbox" checked /> Membership</label>
+          <button class="btn-pill sm" onclick="saveEmailNotifsNow()">Simpan Email</button>
+        </div>
+        <div style="font-weight:600;font-size:12.5px;margin:10px 0 6px;">Notifikasi Push</div>
+        <div class="btn-row" style="margin-bottom:12px;">
+          <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;"><input id="npChat" type="checkbox" checked /> Chat</label>
+          <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;"><input id="npOrd" type="checkbox" checked /> Orders</label>
+          <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;"><input id="npRef" type="checkbox" checked /> Refunds</label>
+          <button class="btn-pill sm" onclick="savePushNotifsNow()">Simpan Push</button>
+        </div>
+        <div id="sessionsList" class="muted" style="font-size:11.5px;"></div>
+      </div>
+    </div>
   </section>
 
   <!-- ════════ 8. CHAT ADMIN (RIER-CHAN) ════════ -->
@@ -1647,6 +1697,7 @@ function go(view) {
   if (view === "coins") loadCoins();
   if (view === "stock") renderCatalogTable();
   if (view === "api") loadApiKeys();
+  if (view === "account") loadAccountExtras();
 }
 
 // ── 12-Segment Semicircular Radial Gauge (Boltshift Signature) ───────────────
@@ -1843,6 +1894,16 @@ async function loadStatus(fresh = false) {
     document.getElementById("sessText").textContent = d.loggedIn ? "Online" : "Offline";
     document.getElementById("offlineDot").classList.toggle("hidden", d.loggedIn);
     document.getElementById("loginNotice").classList.toggle("hidden", d.loggedIn);
+    const snBar = document.getElementById("storeNoticeBanner");
+    if (snBar) {
+      if (d.storeNotice && d.storeNotice.message) {
+        document.getElementById("storeNoticeText").textContent = "📢 " + d.storeNotice.message;
+        document.getElementById("storeNoticeKind").textContent = d.storeNotice.kind || "Pengumuman";
+        snBar.classList.remove("hidden");
+      } else {
+        snBar.classList.add("hidden");
+      }
+    }
     document.getElementById("apiV1Tag").classList.toggle("hidden", !d.hasApiKey);
 
     const apiTag = document.getElementById("apiActiveTag");
@@ -2510,8 +2571,11 @@ async function openOrderDetail(publicId) {
           '<div class="sum-row"><span class="muted">Harga Bersih</span><strong>' + fmtRp(it.netPrice ?? it.totalPrice) + '</strong></div>' +
           delivHtml +
           (it.failureReason ? '<div style="color:var(--err);font-size:12px;margin-top:4px;">Error: ' + esc(it.failureReason) + '</div>' : '') +
-          (failed && it.id ? '<div class="btn-row" style="margin-top:8px;"><button class="btn-pill sm" onclick="retryItem(\\'' + esc(publicId) + '\\',' + it.id + ')">Retry Pengiriman</button></div>' : '') +
-          '</div>';
+          '<div class="btn-row" style="margin-top:8px;">' +
+          (failed && it.id ? '<button class="btn-pill sm" onclick="retryItem(\\'' + esc(publicId) + '\\',' + it.id + ')">Retry Pengiriman</button><button class="btn-pill sm obsidian" onclick="changeRecipientPrompt(\\'' + esc(publicId) + '\\',' + it.id + ')">Ganti Username Roblox</button>' : '') +
+          (classifyItemStatus(it.status, o.paymentStatus).kind === "delivered" && it.id ? '<button class="btn-pill sm" onclick="reviewItemPrompt(\\'' + esc(publicId) + '\\',' + it.id + ')">⭐ Tulis Review</button>' : '') +
+          (deliv?.link && it.id ? '<button class="btn-pill sm" onclick="psAddUserPrompt(\\'' + esc(publicId) + '\\',' + it.id + ')">+ Tambah User PS</button>' : '') +
+          '</div></div>';
       }).join("");
     }
     document.getElementById("dmContent").innerHTML = html;
@@ -2525,6 +2589,139 @@ async function psControl(action, publicId, orderItemId) {
     await api("/api/ps-action", { method: "POST", body: JSON.stringify({ action, publicId, orderItemId }) });
     toast("ok", "Private Server '" + action + "' berhasil!");
     openOrderDetail(publicId);
+  } catch (err) { toast("err", esc(err.message)); }
+}
+
+async function psAddUserPrompt(publicId, orderItemId) {
+  const u = prompt("Masukkan username Roblox yang ingin diizinkan masuk Private Server:");
+  if (!u || !u.trim()) return;
+  try {
+    await api("/api/ps-action", { method: "POST", body: JSON.stringify({ action: "add_user", publicId, orderItemId, robloxUsername: u.trim() }) });
+    toast("ok", "User @" + esc(u.trim()) + " ditambahkan ke Private Server!");
+  } catch (err) { toast("err", esc(err.message)); }
+}
+
+async function changeRecipientPrompt(publicId, orderItemId) {
+  const u = prompt("Masukkan username Roblox tujuan baru untuk item gagal #" + orderItemId + ":");
+  if (!u || !u.trim()) return;
+  try {
+    await api("/api/order-action", { method: "POST", body: JSON.stringify({ action: "change_recipient", publicId, orderItemId, robloxUsername: u.trim() }) });
+    toast("ok", "Username tujuan diubah ke @" + esc(u.trim()) + "!");
+    openOrderDetail(publicId);
+  } catch (err) { toast("err", esc(err.message)); }
+}
+
+async function reviewItemPrompt(publicId, orderItemId) {
+  const desc = prompt("Tulis ulasan singkat untuk pesanan ini (rating 5⭐):", "Proses cepat dan aman!");
+  if (desc === null) return;
+  try {
+    const r = await api("/api/order-action", { method: "POST", body: JSON.stringify({ action: "review", publicId, orderItemId, rating: 5, description: desc.trim() }) });
+    toast("ok", "Review terkirim!" + (r.data?.bonusAmount ? (" Bonus +" + r.data.bonusAmount + " RC!") : ""));
+  } catch (err) { toast("err", esc(err.message)); }
+}
+
+async function loadAccountExtras() {
+  try {
+    const [pRes, mRes] = await Promise.all([
+      api("/api/profile").catch(() => null),
+      api("/api/membership").catch(() => null),
+    ]);
+    if (pRes?.profile) {
+      const pr = pRes.profile;
+      if (pr.user?.name) document.getElementById("profName").value = pr.user.name;
+      if (pr.user?.email) document.getElementById("profEmail").value = pr.user.email;
+      if (pr.whatsAppNumber) document.getElementById("profWa").value = pr.whatsAppNumber;
+      document.getElementById("profPub").checked = pr.isNamePublic !== false;
+      const rBox = document.getElementById("profRankBox");
+      const rName = pr.currentRank?.name || (pr.ranks?.[0]?.name) || "Teman Rier";
+      const claimable = (pr.rewards || []).filter(r => r.canClaim || r.claimable);
+      rBox.innerHTML =
+        '<div class="sum-row"><span class="muted">Rank Akun</span><strong>' + esc(rName) + '</strong></div>' +
+        (pr.totalPurchases !== null ? '<div class="sum-row"><span class="muted">Total Belanja</span><strong>' + fmtRp(pr.totalPurchases) + '</strong></div>' : '') +
+        (claimable.length ? '<div class="btn-row" style="margin-top:8px;">' + claimable.map(c => '<button class="btn-pill sm obsidian" onclick="claimRewardNow(' + c.rankId + ')">🎁 Klaim Hadiah Rank #' + c.rankId + '</button>').join("") + '</div>' : '');
+
+      const em = pRes.notifications?.email;
+      if (em) {
+        if (em.delivery !== undefined) document.getElementById("neDeliv").checked = Boolean(em.delivery);
+        if (em.reminder !== undefined) document.getElementById("neRem").checked = Boolean(em.reminder);
+        if (em.membership !== undefined) document.getElementById("neMem").checked = Boolean(em.membership);
+      }
+      const pu = pRes.notifications?.push;
+      if (pu) {
+        if (pu.chat !== undefined) document.getElementById("npChat").checked = Boolean(pu.chat);
+        if (pu.orders !== undefined) document.getElementById("npOrd").checked = Boolean(pu.orders);
+        if (pu.refunds !== undefined) document.getElementById("npRef").checked = Boolean(pu.refunds);
+      }
+      const sess = pRes.sessions || [];
+      document.getElementById("sessionsList").textContent = sess.length ? ("Sesi aktif terdeteksi: " + sess.length + " perangkat.") : "";
+    }
+    if (mRes) {
+      const mBox = document.getElementById("memberBox");
+      const act = mRes.activeMembership;
+      const srvCount = mRes.memberServers?.servers?.length || 0;
+      mBox.innerHTML =
+        '<div class="sum-row"><span class="muted">Status Membership</span><span class="pill ' + (act ? 'ok' : 'neutral') + '">' + esc(act?.tierName || act?.name || "Belum Aktif") + '</span></div>' +
+        '<div class="sum-row"><span class="muted">Tier Tersedia</span><span>' + (mRes.tiers?.length || 0) + ' paket</span></div>' +
+        '<div class="sum-row"><span class="muted">Daftar Server Member</span><span>' + (srvCount ? srvCount + ' game terbuka' : 'Khusus Member') + '</span></div>';
+    }
+  } catch {}
+}
+
+async function saveProfileNow() {
+  try {
+    await api("/api/profile/update", {
+      method: "POST",
+      body: JSON.stringify({
+        name: document.getElementById("profName").value.trim(),
+        email: document.getElementById("profEmail").value.trim(),
+        whatsAppNumber: document.getElementById("profWa").value.trim() || null,
+        isNamePublic: document.getElementById("profPub").checked,
+      }),
+    });
+    toast("ok", "Profil berhasil disimpan!");
+    loadStatus(true);
+  } catch (err) { toast("err", esc(err.message)); }
+}
+async function claimRewardNow(rankId) {
+  try {
+    await api("/api/profile/claim-reward", { method: "POST", body: JSON.stringify({ rankId }) });
+    toast("ok", "Hadiah rank berhasil diklaim!");
+    loadAccountExtras(); loadStatus(true);
+  } catch (err) { toast("err", esc(err.message)); }
+}
+async function saveEmailNotifsNow() {
+  try {
+    await api("/api/notifications/email", {
+      method: "POST",
+      body: JSON.stringify({
+        delivery: document.getElementById("neDeliv").checked,
+        reminder: document.getElementById("neRem").checked,
+        membership: document.getElementById("neMem").checked,
+      }),
+    });
+    toast("ok", "Pengaturan notifikasi email disimpan.");
+  } catch (err) { toast("err", esc(err.message)); }
+}
+async function savePushNotifsNow() {
+  try {
+    await api("/api/notifications/push", {
+      method: "POST",
+      body: JSON.stringify({
+        chat: document.getElementById("npChat").checked,
+        orders: document.getElementById("npOrd").checked,
+        refunds: document.getElementById("npRef").checked,
+      }),
+    });
+    toast("ok", "Pengaturan notifikasi push disimpan.");
+  } catch (err) { toast("err", esc(err.message)); }
+}
+async function revokeOtherSessionsNow() {
+  const ok = await askModal({ title: "Cabut Semua Sesi Lain", desc: "Semua login di perangkat lain akan keluar (sesi aktif sekarang tetap aman).", okLabel: "Cabut Sesi Lain" });
+  if (!ok) return;
+  try {
+    await api("/api/sessions/revoke", { method: "POST", body: JSON.stringify({ others: true }) });
+    toast("warn", "Semua sesi perangkat lain dicabut.");
+    loadAccountExtras();
   } catch (err) { toast("err", esc(err.message)); }
 }
 

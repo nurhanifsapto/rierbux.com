@@ -157,13 +157,18 @@ function createDashboardServer(bot, { port = 3030, host = "127.0.0.1", secret = 
 
         let cartCount = 0;
         let chatUnread = 0;
+        let storeNotice = null;
         if (loggedIn) {
-          const [cc, cs] = await Promise.all([
+          const [cc, cs, sn] = await Promise.all([
             bot.getCartCount().catch(() => 0),
             bot.getChatState().catch(() => null),
+            bot.getStoreNotice().catch(() => null),
           ]);
           cartCount = cc;
           chatUnread = Number(cs?.unread || 0);
+          storeNotice = sn;
+        } else {
+          storeNotice = await bot.getStoreNotice().catch(() => null);
         }
 
         return sendJson(res, 200, {
@@ -178,6 +183,7 @@ function createDashboardServer(bot, { port = 3030, host = "127.0.0.1", secret = 
           balanceSource,
           cartCount,
           chatUnread,
+          storeNotice,
           stock,
           productsCount: cache.products ? cache.products.length : 165,
           logs: logs.slice(0, 80),
@@ -664,6 +670,16 @@ function createDashboardServer(bot, { port = 3030, host = "127.0.0.1", secret = 
           pushLog("info", `🔁 Retry item #${orderItemId} di order #${publicId}.`);
           return sendJson(res, 200, { ok: true, data: out });
         }
+        if (action === "change_recipient") {
+          const out = await bot.changeFailedItemRecipient({
+            publicId,
+            orderItemId,
+            robloxUsername: body.robloxUsername,
+            parentApprovalAcknowledged: body.parentApprovalAcknowledged,
+          });
+          pushLog("ok", `👤 Ganti target Roblox item #${orderItemId} (#${publicId}) → @${out.user?.username}`);
+          return sendJson(res, 200, { ok: true, data: out });
+        }
         if (action === "review") {
           const out = await bot.createReview({
             publicId,
@@ -675,6 +691,181 @@ function createDashboardServer(bot, { port = 3030, host = "127.0.0.1", secret = 
           return sendJson(res, 200, { ok: true, data: out });
         }
         throw new Error(`Action tidak dikenal: ${action}`);
+      }
+
+      // ── Extended RierBux APIs: Orders Stream, Add Friend, Leaderboard, Reviews, Profile, Membership, Security, Stickers ──
+      if (req.method === "GET" && pathname === "/api/orders/stream") {
+        const qSecret = u.searchParams.get("secret") || "";
+        if (!checkAuth(req, res, qSecret)) return;
+        const cookieHeader = bot.jar.toHeader();
+        if (!cookieHeader) return sendJson(res, 401, { ok: false, error: "Sesi RierBux belum aktif." });
+        const ac = new AbortController();
+        req.on("close", () => ac.abort());
+        const base = (process.env.RIERBUX_BASE_URL || "https://rierbux.com").replace(/\/+$/, "");
+        const upstream = await fetch(`${base}/api/orders/stream`, {
+          headers: {
+            accept: "text/event-stream",
+            "cache-control": "no-cache",
+            cookie: cookieHeader,
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/158.0.0.0 Safari/537.36",
+          },
+          signal: ac.signal,
+        });
+        if (!upstream.ok || !upstream.body) {
+          return sendJson(res, upstream.status || 502, { ok: false, error: `Orders SSE HTTP ${upstream.status}` });
+        }
+        res.writeHead(200, {
+          "content-type": "text/event-stream; charset=utf-8",
+          "cache-control": "no-cache, no-transform",
+          connection: "keep-alive",
+          "x-accel-buffering": "no",
+        });
+        const reader = upstream.body.getReader();
+        (async () => {
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              res.write(Buffer.from(value));
+            }
+          } catch {} finally {
+            try { res.end(); } catch {}
+          }
+        })();
+        return;
+      }
+
+      if (req.method === "GET" && pathname === "/api/orders/add-friend") {
+        if (!checkAuth(req, res)) return;
+        return sendJson(res, 200, { ok: true, ...(await bot.getAddFriendQueue()) });
+      }
+
+      if (req.method === "GET" && pathname === "/api/store-notice") {
+        if (!checkAuth(req, res)) return;
+        return sendJson(res, 200, { ok: true, notice: await bot.getStoreNotice() });
+      }
+
+      if (req.method === "GET" && pathname === "/api/leaderboard") {
+        if (!checkAuth(req, res)) return;
+        return sendJson(res, 200, { ok: true, data: await bot.getLeaderboard() });
+      }
+
+      if (req.method === "GET" && pathname === "/api/reviews") {
+        if (!checkAuth(req, res)) return;
+        const data = await bot.getReviews({
+          productId: u.searchParams.get("productId") || undefined,
+          handlerIds: u.searchParams.get("handlerIds") || undefined,
+          page: Number(u.searchParams.get("page") || 1),
+          limit: Number(u.searchParams.get("limit") || 10),
+        });
+        return sendJson(res, 200, { ok: true, ...data });
+      }
+
+      if (req.method === "POST" && pathname === "/api/reviews/helpful") {
+        const body = await readJsonBody(req);
+        if (!checkAuth(req, res, body.secret)) return;
+        return sendJson(res, 200, { ok: true, data: await bot.toggleReviewHelpful(body.reviewId) });
+      }
+
+      if (req.method === "GET" && pathname === "/api/profile") {
+        if (!checkAuth(req, res)) return;
+        const [profile, notifications, sessions] = await Promise.all([
+          bot.getProfileOverview(),
+          bot.getNotificationSettings().catch(() => ({ email: null, push: null })),
+          bot.listActiveSessions().catch(() => []),
+        ]);
+        return sendJson(res, 200, { ok: true, profile, notifications, sessions });
+      }
+
+      if (req.method === "POST" && pathname === "/api/profile/update") {
+        const body = await readJsonBody(req);
+        if (!checkAuth(req, res, body.secret)) return;
+        const data = await bot.updateProfile(body);
+        pushLog("ok", `👤 Profil akun diperbarui (${body.name || "-"})`);
+        return sendJson(res, 200, { ok: true, data });
+      }
+
+      if (req.method === "POST" && pathname === "/api/profile/claim-reward") {
+        const body = await readJsonBody(req);
+        if (!checkAuth(req, res, body.secret)) return;
+        const data = await bot.claimRankReward(body.rankId);
+        pushLog("ok", `🎁 Hadiah Rank #${body.rankId} berhasil diklaim!`);
+        return sendJson(res, 200, { ok: true, data });
+      }
+
+      if (req.method === "POST" && pathname === "/api/profile/whatsapp") {
+        const body = await readJsonBody(req);
+        if (!checkAuth(req, res, body.secret)) return;
+        return sendJson(res, 200, { ok: true, data: await bot.setupWhatsApp(body.whatsAppNumber) });
+      }
+
+      if (req.method === "POST" && pathname === "/api/notifications/email") {
+        const body = await readJsonBody(req);
+        if (!checkAuth(req, res, body.secret)) return;
+        return sendJson(res, 200, { ok: true, data: await bot.updateEmailNotifications(body) });
+      }
+
+      if (req.method === "POST" && pathname === "/api/notifications/push") {
+        const body = await readJsonBody(req);
+        if (!checkAuth(req, res, body.secret)) return;
+        return sendJson(res, 200, { ok: true, data: await bot.updatePushNotifications(body) });
+      }
+
+      if (req.method === "POST" && pathname === "/api/sessions/revoke") {
+        const body = await readJsonBody(req);
+        if (!checkAuth(req, res, body.secret)) return;
+        if (body.others) {
+          const data = await bot.revokeOtherSessions();
+          pushLog("warn", "🔐 Semua sesi perangkat lain dicabut.");
+          return sendJson(res, 200, { ok: true, data });
+        }
+        const data = await bot.revokeSession(body.token);
+        pushLog("warn", "🔐 Sesi perangkat dicabut.");
+        return sendJson(res, 200, { ok: true, data });
+      }
+
+      if (req.method === "GET" && pathname === "/api/membership") {
+        if (!checkAuth(req, res)) return;
+        const [membership, servers] = await Promise.all([
+          bot.getMembership(),
+          bot.getMemberGameServers().catch(() => ({ isMember: false, servers: [] })),
+        ]);
+        return sendJson(res, 200, { ok: true, ...membership, memberServers: servers });
+      }
+
+      if (req.method === "POST" && pathname === "/api/membership/buy") {
+        const body = await readJsonBody(req);
+        if (!checkAuth(req, res, body.secret)) return;
+        if (body.payMethod === "duitku" && body.paymentMethodId) {
+          const data = await bot.createMembershipOrder(body.tierId, body.paymentMethodId);
+          pushLog("ok", `👑 Invoice Membership tier #${body.tierId} dibuat.`);
+          return sendJson(res, 200, { ok: true, data });
+        }
+        const data = await bot.payMembershipWithBalance(body.tierId);
+        pushLog("ok", `👑 Membership tier #${body.tierId} aktif (dibayar RierCoins)!`);
+        return sendJson(res, 200, { ok: true, data });
+      }
+
+      if (req.method === "POST" && pathname === "/api/cart/update") {
+        const body = await readJsonBody(req);
+        if (!checkAuth(req, res, body.secret)) return;
+        return sendJson(res, 200, { ok: true, data: await bot.updateCartQuantity(body.cartItemId, body.quantity) });
+      }
+
+      if (req.method === "POST" && pathname === "/api/cart/remove-multiple") {
+        const body = await readJsonBody(req);
+        if (!checkAuth(req, res, body.secret)) return;
+        return sendJson(res, 200, { ok: true, data: await bot.removeMultipleFromCart(body.cartItemIds || []) });
+      }
+
+      if (req.method === "POST" && pathname === "/api/chat/sticker-action") {
+        const body = await readJsonBody(req);
+        if (!checkAuth(req, res, body.secret)) return;
+        if (body.action === "save") return sendJson(res, 200, { ok: true, data: await bot.saveStickerFromMessage(body.messageId) });
+        if (body.action === "unsave") return sendJson(res, 200, { ok: true, data: await bot.unsaveStickerFromMessage(body.messageId) });
+        if (body.action === "create") return sendJson(res, 200, { ok: true, data: await bot.createPersonalStickers(body.stickers || []) });
+        if (body.action === "delete") return sendJson(res, 200, { ok: true, data: await bot.deletePersonalSticker(body.id) });
+        throw new Error(`Sticker action tidak dikenal: ${body.action}`);
       }
 
       // ── Chat Admin (Rier-chan) Endpoints ────────────────────────────────
