@@ -504,6 +504,19 @@ function buildDashboardHtml({ requireSecret = false } = {}) {
             <input id="limSearch" placeholder="Cari item limited (bighead, crown, fedora, dll)..." oninput="renderLimiteds()" />
           </div>
 
+          <!-- Robux Transfer & Robux 5 Hari: Input Nominal + Preset Cepat -->
+          <div id="wrapRobuxAmount" class="hidden" style="margin-top:8px;">
+            <div class="field" style="margin-bottom:10px;">
+              <label>Masukkan Jumlah Robux (R$) <span id="rbxRangeHint" class="muted"></span></label>
+              <div class="input-group">
+                <input id="robuxCustomInput" type="number" min="10" max="5000" value="100" placeholder="Contoh: 100, 250, 500, 1000..." oninput="onRobuxCustomInput(this.value)" />
+                <span class="tag" id="robuxRateTag" style="padding:0 12px;font-size:12px;">- / R$</span>
+              </div>
+            </div>
+            <div class="muted" style="margin-bottom:7px;font-weight:600;">Atau pilih nominal cepat:</div>
+            <div id="robuxPresetGrid" class="items-list" style="max-height:none;"></div>
+          </div>
+
           <div id="varBar" class="var-bar hidden"></div>
           <div id="itemsList" class="items-list" style="margin-top:10px;">
             <div class="muted" style="padding:14px 4px;">Pilih game di atas untuk melihat daftar item beserta icon & harganya.</div>
@@ -570,10 +583,10 @@ function buildDashboardHtml({ requireSecret = false } = {}) {
           </div>
 
           <div id="wrapQty" class="field" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-            <label style="margin:0;">Jumlah / Quantity</label>
+            <label id="qtyLabel" style="margin:0;">Jumlah / Quantity</label>
             <div class="stepper">
               <button type="button" onclick="stepQty(-1)">−</button>
-              <input id="qtyInput" type="number" value="1" min="1" oninput="updateSummary()" />
+              <input id="qtyInput" type="number" value="1" min="1" oninput="syncQtyFromRight()" />
               <button type="button" onclick="stepQty(1)">+</button>
             </div>
           </div>
@@ -1103,14 +1116,19 @@ async function setCat(cat) {
   for (const c of ["product", "robux-5d", "robux-transfer", "robux-instant", "private-server", "limited"]) {
     document.getElementById("cat-" + c).classList.toggle("active", c === cat);
   }
+  const isRobuxAmt = cat === "robux-transfer" || cat === "robux-5d";
   document.getElementById("wrapGameSearch").classList.toggle("hidden", cat !== "product");
   document.getElementById("wrapPsSearch").classList.toggle("hidden", cat !== "private-server");
   document.getElementById("wrapLimSearch").classList.toggle("hidden", cat !== "limited");
+  document.getElementById("wrapRobuxAmount").classList.toggle("hidden", !isRobuxAmt);
+  document.getElementById("itemsList").classList.toggle("hidden", isRobuxAmt);
   document.getElementById("wrapRoblox").classList.toggle("hidden", cat === "private-server");
   document.getElementById("wrapGp").classList.toggle("hidden", cat !== "robux-5d");
   document.getElementById("wrapPass").classList.toggle("hidden", cat !== "robux-instant");
   document.getElementById("wrapLimTrade").classList.toggle("hidden", cat !== "limited");
   document.getElementById("wrapQty").classList.toggle("hidden", cat === "limited" || cat === "private-server");
+  document.getElementById("qtyLabel").textContent = isRobuxAmt ? "Jumlah Robux (R$)" : "Jumlah / Quantity";
+  document.getElementById("step1Title").textContent = isRobuxAmt ? "1. Masukkan Jumlah Robux" : "1. Pilih Produk & Item";
   document.getElementById("varBar").classList.add("hidden");
 
   if (cat === "robux-5d") await pickSlug("robux-5-hari");
@@ -1317,15 +1335,61 @@ function selectItemById(id) {
   if (selItem) {
     const qEl = document.getElementById("qtyInput");
     qEl.min = selItem.minQuantity || 1;
-    if (Number(qEl.value) < (selItem.minQuantity || 1)) qEl.value = selItem.minQuantity || 1;
+    if (activeCat === "robux-transfer" || activeCat === "robux-5d") {
+      const def = Math.max(selItem.minQuantity || 1, 100);
+      qEl.value = def;
+      const cEl = document.getElementById("robuxCustomInput");
+      cEl.min = selItem.minQuantity || 1;
+      cEl.max = selItem.maxQuantity || 5000;
+      cEl.value = def;
+      renderRobuxPresets();
+    } else if (Number(qEl.value) < (selItem.minQuantity || 1)) {
+      qEl.value = selItem.minQuantity || 1;
+    }
   }
   renderItems();
   updateSummary();
 }
+function renderRobuxPresets() {
+  if (!selItem) return;
+  const unit = Number(selItem.price ?? selItem.unitPrice) || 0;
+  const minQ = selItem.minQuantity || 1;
+  const maxQ = selItem.maxQuantity || 5000;
+  const curQ = Number(document.getElementById("qtyInput").value) || minQ;
+  document.getElementById("rbxRangeHint").textContent = "(Min " + fmtNum(minQ) + " – Maks " + fmtNum(maxQ) + " R$)";
+  document.getElementById("robuxRateTag").textContent = fmtRp(unit) + " / R$";
+  const presets = [50, 100, 200, 300, 500, 1000, 1500, 2000, 3000, 5000].filter(n => n >= minQ && n <= maxQ);
+  document.getElementById("robuxPresetGrid").innerHTML = presets.map(n =>
+    '<div class="item-tile ' + (curQ === n ? 'active' : '') + '" onclick="pickRobuxPreset(' + n + ')">' +
+    (selItem.imageUrl ? '<img class="item-icon" src="' + esc(selItem.imageUrl) + '" alt="" />' : '') +
+    '<div class="item-body"><div class="it-name">' + fmtNum(n) + ' Robux</div>' +
+    '<div class="it-bottom"><span class="it-price">' + fmtRp(unit * n) + '</span><span class="it-sub">' + (activeCat === 'robux-5d' ? 'GP ' + Math.ceil(n / 0.7) + ' R$' : 'Tanpa Pajak') + '</span></div></div></div>'
+  ).join("");
+}
+function pickRobuxPreset(n) {
+  document.getElementById("qtyInput").value = n;
+  document.getElementById("robuxCustomInput").value = n;
+  renderRobuxPresets();
+  updateSummary();
+}
+function onRobuxCustomInput(val) {
+  const n = Math.max(1, parseInt(val, 10) || 1);
+  document.getElementById("qtyInput").value = n;
+  renderRobuxPresets();
+  updateSummary();
+}
+function syncQtyFromRight() {
+  if (activeCat === "robux-transfer" || activeCat === "robux-5d") {
+    document.getElementById("robuxCustomInput").value = document.getElementById("qtyInput").value;
+    renderRobuxPresets();
+  }
+  updateSummary();
+}
 function stepQty(delta) {
   const el = document.getElementById("qtyInput");
-  el.value = Math.max(Number(el.min) || 1, (Number(el.value) || 1) + delta);
-  updateSummary();
+  const step = (activeCat === "robux-transfer" || activeCat === "robux-5d") ? delta * 10 : delta;
+  el.value = Math.max(Number(el.min) || 1, (Number(el.value) || 1) + step);
+  syncQtyFromRight();
 }
 function setPay(m) {
   payMode = m;
