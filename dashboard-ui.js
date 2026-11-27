@@ -295,9 +295,11 @@ function buildDashboardHtml({ requireSecret = false } = {}) {
     background: var(--bg-recessed); color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
   }
+  .pill.ok { background: #E6F7EF; color: #0F8A5B; }
   .pill.pos { background: var(--badge-pos-bg); color: var(--badge-pos-fg); }
   .pill.neg { background: var(--badge-neg-bg); color: var(--badge-neg-fg); }
   .pill.warn { background: var(--badge-warn-bg); color: var(--badge-warn-fg); }
+  .pill.neutral { background: #F3F4F6; color: #7D8187; }
   .pill.on-brand { background: rgba(255, 255, 255, 0.22); color: #FFFFFF; }
   .pill.amber { background: var(--badge-amber); color: #FFFFFF; font-size: 10.5px; }
   .pill.dark { background: var(--ink-obsidian); color: #FFFFFF; font-size: 10.5px; }
@@ -1493,6 +1495,38 @@ function paintPerfBars(maxVal) {
 }
 function selectPerfBar(idx) { activeBarIdx = idx; paintPerfBars(); }
 
+function classifyItemStatus(rawStatus, paymentStatus) {
+  const s = String(rawStatus || "").trim().toLowerCase();
+  const p = String(paymentStatus || "").trim().toLowerCase();
+  if (!s || s === "-") {
+    if (p.includes("batal") || p.includes("cancel") || p.includes("expir") || p.includes("gagal") || p.includes("fail")) {
+      return { kind: "canceled", cls: "neutral" };
+    }
+    return { kind: "other", cls: "neutral" };
+  }
+  if (s === "delivered" || s.includes("terkirim") || s.includes("selesai") || s === "completed" || s === "success") {
+    return { kind: "delivered", cls: "ok" };
+  }
+  if (s === "pending" || s === "processing" || s.includes("nunggu") || s.includes("proses") || s.includes("antri")) {
+    return { kind: "pending", cls: "warn" };
+  }
+  if (s.includes("fail") || s.includes("gagal") || s.includes("cancel") || s.includes("batal") || s.includes("void") || s.includes("refund")) {
+    return { kind: "failed", cls: "neg" };
+  }
+  return { kind: "other", cls: "neutral" };
+}
+
+function classifyPayStatus(paymentStatus) {
+  const s = String(paymentStatus || "").trim().toLowerCase();
+  if (s === "paid" || s.includes("dibayar") || s.includes("lunas") || s.includes("success")) {
+    return { kind: "paid", cls: "ok" };
+  }
+  if (s === "unpaid" || s.includes("belum") || s.includes("pending") || s.includes("nunggu")) {
+    return { kind: "unpaid", cls: "warn" };
+  }
+  return { kind: "failed", cls: "neg" };
+}
+
 async function loadOverview(fresh = false) {
   if (fresh) await loadStatus(true);
   try {
@@ -1504,10 +1538,10 @@ async function loadOverview(fresh = false) {
     let delivered = 0, pending = 0, failed = 0;
     for (const o of recentOrdersCache) {
       for (const it of (o.items || [])) {
-        const s = String(it.status || "").toLowerCase();
-        if (s === "delivered") delivered++;
-        else if (s === "pending" || s === "processing") pending++;
-        else if (s === "failed" || s === "canceled") failed++;
+        const c = classifyItemStatus(it.status, o.paymentStatus);
+        if (c.kind === "delivered") delivered++;
+        else if (c.kind === "pending") pending++;
+        else if (c.kind === "failed") failed++;
       }
     }
     const denom = delivered + pending + failed;
@@ -1515,8 +1549,10 @@ async function loadOverview(fresh = false) {
     renderRadialGauge(rate);
     document.getElementById("subDelivered").textContent = fmtNum(delivered);
     document.getElementById("subPending").textContent = fmtNum(pending);
-    document.getElementById("kpiOrdersPill").textContent = pending > 0 ? (pending + " proses") : (delivered + " selesai");
-    document.getElementById("kpiOrdersSub").textContent = "50 order terakhir · " + delivered + " delivered, " + failed + " failed";
+    const ordPill = document.getElementById("kpiOrdersPill");
+    ordPill.textContent = pending > 0 ? (pending + " diproses") : (delivered + " terkirim");
+    ordPill.className = "pill " + (pending > 0 ? "warn" : "ok");
+    document.getElementById("kpiOrdersSub").textContent = "50 order terakhir · " + delivered + " terkirim, " + pending + " proses, " + failed + " gagal";
 
     renderPerfChart(recentOrdersCache);
     renderRecentOrders();
@@ -1546,20 +1582,18 @@ function renderRecentOrders() {
 
 function renderOrderRowHtml(o) {
   const id = o.id || o.publicId;
-  const stLower = String(o.paymentStatus || "").toLowerCase();
-  const isUnpaid = stLower === "unpaid" || stLower.includes("belum");
-  const isPaid = stLower === "paid" || stLower.includes("dibayar");
+  const pay = classifyPayStatus(o.paymentStatus);
+  const isUnpaid = pay.kind === "unpaid";
   const itemsHtml = (o.items || []).map(it => {
-    const s = String(it.status || "-").toLowerCase();
-    const cls = s === "delivered" ? "pos" : (s === "failed" || s === "canceled") ? "neg" : "warn";
-    return esc(it.product) + ' · ' + esc(it.item) + ' ×' + (it.quantity || 1) + ' <span class="pill ' + cls + '">' + esc(it.status || "-") + '</span>';
+    const c = classifyItemStatus(it.status, o.paymentStatus);
+    return esc(it.product) + ' · ' + esc(it.item) + ' ×' + (it.quantity || 1) + ' <span class="pill ' + c.cls + '">' + esc(it.status || "-") + '</span>';
   }).join("<br>");
   const rbx = (o.items || []).map(it => it.inputs?.robloxUsername || "").filter(Boolean).join(", ") || "-";
   const act = '<div class="btn-row">' +
     '<button class="btn-pill sm" onclick="openOrderDetail(\\'' + esc(id) + '\\')">Detail</button>' +
     (isUnpaid ? '<button class="btn-pill sm obsidian" onclick="ordAct(\\'pay_balance\\',\\'' + esc(id) + '\\')">Bayar</button><button class="btn-pill sm danger" onclick="ordAct(\\'cancel\\',\\'' + esc(id) + '\\')">Batal</button>' : '') +
     '</div>';
-  return '<tr><td><code>#' + esc(id) + '</code></td><td class="muted">' + esc(String(o.createdAt || "").slice(0, 16).replace("T", " ")) + '</td><td>' + itemsHtml + '</td><td>' + esc(rbx) + '</td><td><strong>' + fmtRp(o.total) + '</strong></td><td><span class="pill ' + (isPaid ? 'pos' : isUnpaid ? 'warn' : 'neg') + '">' + esc(o.paymentStatus) + '</span></td><td>' + act + '</td></tr>';
+  return '<tr><td><code>#' + esc(id) + '</code></td><td class="muted">' + esc(String(o.createdAt || "").slice(0, 16).replace("T", " ")) + '</td><td>' + itemsHtml + '</td><td>' + esc(rbx) + '</td><td><strong>' + fmtRp(o.total) + '</strong></td><td><span class="pill ' + pay.cls + '">' + esc(o.paymentStatus) + '</span></td><td>' + act + '</td></tr>';
 }
 
 async function loadStatus(fresh = false) {
@@ -2181,8 +2215,9 @@ async function openOrderDetail(publicId) {
     const discTotal = items.reduce((s, it) => s + Number(it.discounts?.item || 0) + Number(it.discounts?.promoCode || 0) + Number(it.discounts?.membership || 0), 0);
     const isUnpaid = String(o.paymentStatus || "").toLowerCase() === "unpaid";
 
+    const payCls = classifyPayStatus(o.paymentStatus).cls;
     let html = '<div class="summary-box" style="margin-top:0;">' +
-      '<div class="sum-row"><span class="muted">Status Bayar</span><span class="pill ' + (o.paymentStatus === "paid" ? "pos" : isUnpaid ? "warn" : "neg") + '">' + esc(o.paymentStatus || "-") + '</span></div>' +
+      '<div class="sum-row"><span class="muted">Status Bayar</span><span class="pill ' + payCls + '">' + esc(o.paymentStatus || "-") + '</span></div>' +
       (o.paymentMethod ? '<div class="sum-row"><span class="muted">Metode Bayar</span><span>' + esc(o.paymentMethod) + '</span></div>' : '') +
       (o.createdAt ? '<div class="sum-row"><span class="muted">Dibuat</span><span>' + esc(String(o.createdAt).slice(0, 19).replace("T", " ")) + '</span></div>' : '') +
       (o.paidAt ? '<div class="sum-row"><span class="muted">Dibayar</span><span>' + esc(String(o.paidAt).slice(0, 19).replace("T", " ")) + '</span></div>' : '') +
@@ -2224,7 +2259,7 @@ async function openOrderDetail(publicId) {
           (it.imageUrl ? '<img class="item-icon" src="' + esc(it.imageUrl) + '" style="width:38px;height:38px;" />' : '') +
           '<div style="flex:1;min-width:0;"><div style="font-weight:600;font-size:12.5px;">' + esc(it.product || it.productName) + ' · ' + esc(it.item || it.itemName) + ' ×' + (it.quantity || 1) + '</div>' +
           '<div class="muted">' + esc(it.handler || it.deliveryMethod || "") + (it.deliveredAt ? ' · Dikirim ' + esc(String(it.deliveredAt).slice(0, 16).replace("T", " ")) : '') + '</div></div>' +
-          '<span class="pill ' + (it.status === "delivered" ? "pos" : failed ? "neg" : "warn") + '">' + esc(it.status || "-") + '</span></div>' +
+          '<span class="pill ' + classifyItemStatus(it.status, o.paymentStatus).cls + '">' + esc(it.status || "-") + '</span></div>' +
           (inp.robloxUsername ? '<div class="sum-row"><span class="muted">Roblox</span><span>' + (rbxProfile ? '<a class="ext" target="_blank" href="' + rbxProfile + '">@' + esc(inp.robloxUsername) + ' ↗</a>' : '@' + esc(inp.robloxUsername)) + '</span></div>' : '') +
           (inp.smallName ? '<div class="sum-row"><span class="muted">Tumbal Limited</span><span>' + esc(inp.smallName) + ' (UAID ' + esc(inp.smallUaid || "-") + ')</span></div>' : '') +
           '<div class="sum-row"><span class="muted">Harga Bersih</span><strong>' + fmtRp(it.netPrice ?? it.totalPrice) + '</strong></div>' +
