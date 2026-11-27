@@ -156,10 +156,14 @@ function createDashboardServer(bot, { port = 3030, host = "127.0.0.1", secret = 
         }
 
         let cartCount = 0;
+        let chatUnread = 0;
         if (loggedIn) {
-          try {
-            cartCount = await bot.getCartCount();
-          } catch {}
+          const [cc, cs] = await Promise.all([
+            bot.getCartCount().catch(() => 0),
+            bot.getChatState().catch(() => null),
+          ]);
+          cartCount = cc;
+          chatUnread = Number(cs?.unread || 0);
         }
 
         return sendJson(res, 200, {
@@ -173,6 +177,7 @@ function createDashboardServer(bot, { port = 3030, host = "127.0.0.1", secret = 
           balance,
           balanceSource,
           cartCount,
+          chatUnread,
           stock,
           productsCount: cache.products ? cache.products.length : 165,
           logs: logs.slice(0, 80),
@@ -670,6 +675,124 @@ function createDashboardServer(bot, { port = 3030, host = "127.0.0.1", secret = 
           return sendJson(res, 200, { ok: true, data: out });
         }
         throw new Error(`Action tidak dikenal: ${action}`);
+      }
+
+      // ── Chat Admin (Rier-chan) Endpoints ────────────────────────────────
+      if (req.method === "GET" && pathname === "/api/chat/bootstrap") {
+        if (!checkAuth(req, res)) return;
+        const [status, state, msgRes, pins, stickers] = await Promise.all([
+          bot.getChatStatus().catch(() => ({ online: false, offlineMessage: null })),
+          bot.getChatState().catch(() => ({ unread: 0, canSend: true })),
+          bot.getChatMessages({ limit: 40 }),
+          bot.getChatPins().catch(() => []),
+          bot.getChatStickers().catch(() => []),
+        ]);
+        return sendJson(res, 200, {
+          ok: true,
+          status,
+          state,
+          messages: msgRes.messages || [],
+          nextCursor: msgRes.nextCursor ?? null,
+          pins,
+          stickers,
+        });
+      }
+
+      if (req.method === "GET" && pathname === "/api/chat/messages") {
+        if (!checkAuth(req, res)) return;
+        const data = await bot.getChatMessages({
+          limit: Number(u.searchParams.get("limit") || 30),
+          cursor: u.searchParams.get("cursor") || undefined,
+          after: u.searchParams.get("after") || undefined,
+          around: u.searchParams.get("around") || undefined,
+        });
+        return sendJson(res, 200, { ok: true, ...data });
+      }
+
+      if (req.method === "GET" && pathname === "/api/chat/media") {
+        if (!checkAuth(req, res)) return;
+        const data = await bot.getChatMedia({
+          limit: Number(u.searchParams.get("limit") || 30),
+          cursor: u.searchParams.get("cursor") || undefined,
+        });
+        return sendJson(res, 200, { ok: true, ...data });
+      }
+
+      if (req.method === "GET" && pathname === "/api/chat/orders") {
+        if (!checkAuth(req, res)) return;
+        const data = await bot.getChatOrders({
+          page: Number(u.searchParams.get("page") || 1),
+          limit: Number(u.searchParams.get("limit") || 10),
+          status: u.searchParams.get("status") || undefined,
+          itemStatus: u.searchParams.get("itemStatus") || undefined,
+          search: u.searchParams.get("search") || undefined,
+        });
+        return sendJson(res, 200, { ok: true, ...data });
+      }
+
+      if (req.method === "GET" && pathname === "/api/chat/proxy") {
+        const mediaPath = u.searchParams.get("path") || "";
+        const { buffer, contentType } = await bot.fetchChatMediaProxy(mediaPath);
+        res.writeHead(200, {
+          "content-type": contentType,
+          "cache-control": "private, max-age=300",
+        });
+        return res.end(buffer);
+      }
+
+      if (req.method === "POST" && pathname === "/api/chat/send") {
+        const body = await readJsonBody(req);
+        if (!checkAuth(req, res, body.secret)) return;
+        const msg = await bot.sendChatMessage({
+          content: body.content || "",
+          attachments: body.attachments || [],
+          replyToMessageId: body.replyToMessageId,
+          stickerId: body.stickerId,
+          clientNonce: body.clientNonce,
+        });
+        pushLog("info", `💬 [CHAT] Pesan terkirim ke Rier-chan${body.stickerId ? " (Stiker #" + body.stickerId + ")" : ""}`);
+        return sendJson(res, 200, { ok: true, message: msg });
+      }
+
+      if (req.method === "POST" && pathname === "/api/chat/upload") {
+        const body = await readJsonBody(req, 6 * 1024 * 1024);
+        if (!checkAuth(req, res, body.secret)) return;
+        const rawB64 = String(body.base64 || "").replace(/^data:[^;]+;base64,/, "");
+        const buffer = Buffer.from(rawB64, "base64");
+        const uploaded = await bot.uploadChatImage({
+          filename: body.filename || "image.png",
+          mimeType: body.mimeType || "image/png",
+          buffer,
+          width: body.width || 800,
+          height: body.height || 600,
+        });
+        return sendJson(res, 200, { ok: true, attachment: uploaded });
+      }
+
+      if (req.method === "POST" && pathname === "/api/chat/read") {
+        const body = await readJsonBody(req);
+        if (!checkAuth(req, res, body.secret)) return;
+        await bot.markChatRead();
+        return sendJson(res, 200, { ok: true });
+      }
+
+      if (req.method === "POST" && pathname === "/api/chat/action") {
+        const body = await readJsonBody(req);
+        if (!checkAuth(req, res, body.secret)) return;
+        const { action, messageId, content, pinned } = body;
+        if (action === "edit") {
+          const out = await bot.editChatMessage(messageId, content);
+          return sendJson(res, 200, { ok: true, data: out });
+        }
+        if (action === "delete") {
+          const out = await bot.deleteChatMessage(messageId);
+          return sendJson(res, 200, { ok: true, data: out });
+        }
+        if (action === "pin") {
+          const out = await bot.setChatMessagePinned(messageId, pinned !== false);
+          return sendJson(res, 200, { ok: true, data: out });
+        }
+        throw new Error(`Chat action tidak dikenal: ${action}`);
       }
 
       // ── Direct HTTP Webhook & Remote Admin (Kompatibel IDV / Dokploy) ───

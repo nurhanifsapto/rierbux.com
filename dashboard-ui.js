@@ -573,6 +573,121 @@ function buildDashboardHtml({ requireSecret = false } = {}) {
   }
   .toast.ok { background: #111312; border-left: 4px solid var(--brand-primary); }
   .toast.err { background: #111312; border-left: 4px solid var(--viz-red); }
+
+  /* Chat Admin (Boltshift 8/4 Workspace) */
+  .nav-unread {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 17px; height: 17px; padding: 0 5px; margin-left: 5px;
+    border-radius: 999px; background: var(--viz-red); color: #FFFFFF;
+    font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+  .chat-grid { display: grid; grid-template-columns: minmax(0, 1fr) 370px; gap: 16px; align-items: start; }
+  @media (max-width: 1020px) { .chat-grid { grid-template-columns: 1fr; } }
+  .chat-card { display: flex; flex-direction: column; height: 670px; padding: 0; overflow: hidden; }
+  .chat-head {
+    padding: 16px 20px; border-bottom: 1px solid var(--border-row);
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  }
+  .chat-admin-info { display: flex; align-items: center; gap: 11px; }
+  .chat-admin-ava {
+    width: 40px; height: 40px; border-radius: 50%; background: var(--grad-hero);
+    color: #FFFFFF; font-weight: 700; font-size: 14px;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .chat-pins {
+    padding: 9px 18px; background: var(--badge-pos-bg); color: var(--badge-pos-fg);
+    font-size: 12px; display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px solid var(--border-row);
+  }
+  .chat-log {
+    flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 10px;
+    background: #FCFCFD;
+  }
+  .chat-date-div {
+    text-align: center; margin: 6px 0;
+  }
+  .chat-date-div span {
+    background: var(--bg-recessed); color: var(--text-muted);
+    font-size: 11px; font-weight: 600; padding: 4px 12px; border-radius: 999px;
+  }
+  .msg-row { display: flex; flex-direction: column; max-width: 78%; }
+  .msg-row.admin { align-self: flex-start; align-items: flex-start; }
+  .msg-row.user { align-self: flex-end; align-items: flex-end; }
+  .msg-bubble {
+    padding: 10px 14px; border-radius: 16px; font-size: 13px; line-height: 1.5;
+    word-break: break-word; white-space: pre-wrap; position: relative;
+  }
+  .msg-row.admin .msg-bubble {
+    background: #FFFFFF; color: var(--text-primary);
+    border: 1px solid var(--border-card); border-bottom-left-radius: 4px;
+    box-shadow: 0 1px 2px rgba(16,18,17,0.03);
+  }
+  .msg-row.user .msg-bubble {
+    background: var(--brand-primary); color: #FFFFFF; border-bottom-right-radius: 4px;
+  }
+  .msg-bubble.deleted { opacity: .6; font-style: italic; }
+  .msg-reply-quote {
+    font-size: 11.5px; padding: 6px 9px; border-radius: 8px; margin-bottom: 6px;
+    background: rgba(17,19,18,0.06); border-left: 3px solid var(--brand-primary);
+  }
+  .msg-row.user .msg-reply-quote { background: rgba(255,255,255,0.18); border-left-color: #FFFFFF; }
+  .msg-img {
+    max-width: 260px; max-height: 220px; border-radius: 10px; display: block;
+    margin-top: 6px; cursor: pointer; object-fit: cover; border: 1px solid rgba(17,19,18,0.06);
+  }
+  .msg-sticker { width: 112px; height: 112px; object-fit: contain; display: block; }
+  .msg-link-card {
+    margin-top: 8px; padding: 9px 11px; border-radius: 10px;
+    background: var(--bg-recessed); color: var(--text-primary); text-decoration: none;
+    display: block; border: 1px solid var(--border-card);
+  }
+  .msg-meta {
+    display: flex; align-items: center; gap: 6px; margin-top: 4px;
+    font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums;
+  }
+  .msg-acts { display: inline-flex; gap: 4px; opacity: 0; transition: opacity .15s; }
+  .msg-row:hover .msg-acts { opacity: 1; }
+  .msg-act-btn {
+    border: none; background: var(--bg-recessed); color: var(--text-secondary);
+    font-size: 10.5px; padding: 2px 7px; border-radius: 999px; cursor: pointer; font-family: inherit;
+  }
+  .msg-act-btn:hover { background: #E5E7EB; color: var(--text-primary); }
+  .chat-composer {
+    padding: 12px 16px; border-top: 1px solid var(--border-row); background: #FFFFFF; position: relative;
+  }
+  .chat-reply-bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    background: var(--bg-recessed); padding: 7px 12px; border-radius: 10px;
+    margin-bottom: 8px; font-size: 12px; border-left: 3px solid var(--brand-primary);
+  }
+  .chat-input-row { display: flex; align-items: flex-end; gap: 8px; }
+  .chat-textarea {
+    flex: 1; background: var(--bg-recessed); border: 1px solid transparent; border-radius: 14px;
+    padding: 10px 14px; font-family: inherit; font-size: 13px; color: var(--text-primary);
+    resize: none; min-height: 42px; max-height: 110px; outline: none;
+  }
+  .chat-textarea:focus { background: #FFFFFF; border-color: var(--brand-primary); }
+  .sticker-pop {
+    position: absolute; bottom: 72px; left: 16px; width: 320px; max-height: 250px; overflow-y: auto;
+    background: #FFFFFF; border: 1px solid var(--border-ctrl); border-radius: 16px;
+    padding: 10px; box-shadow: var(--shadow-popover); z-index: 30;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
+  }
+  .sticker-item {
+    border: none; background: var(--bg-recessed); border-radius: 10px; padding: 6px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .sticker-item:hover { background: var(--badge-pos-bg); }
+  .sticker-item img { width: 56px; height: 56px; object-fit: contain; }
+  .chat-order-card {
+    background: var(--bg-recessed); border-radius: var(--radius-subcard);
+    padding: 12px; margin-bottom: 10px; border: 1px solid var(--border-card);
+  }
+  .chat-order-top { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-bottom: 8px; }
+  .chat-order-item { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; }
+  .chat-order-item img { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; background: #FFFFFF; flex-shrink: 0; }
+  .media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+  .media-grid img { width: 100%; height: 115px; object-fit: cover; border-radius: 12px; cursor: pointer; border: 1px solid var(--border-card); }
   .toast.warn { background: #111312; border-left: 4px solid var(--badge-amber); }
 
   .muted { color: var(--text-muted); font-size: 12px; }
@@ -641,6 +756,7 @@ function buildDashboardHtml({ requireSecret = false } = {}) {
       <button class="nav-tab active" id="nav-overview" onclick="go('overview')">Overview</button>
       <button class="nav-tab" id="nav-order" onclick="go('order')">Order Cepat</button>
       <button class="nav-tab" id="nav-orders" onclick="go('orders')">Pesanan</button>
+      <button class="nav-tab" id="nav-chat" onclick="go('chat')">Chat Admin<span id="navChatBadge" class="nav-unread hidden">0</span></button>
       <button class="nav-tab" id="nav-coins" onclick="go('coins')">RierCoins</button>
       <button class="nav-tab" id="nav-stock" onclick="go('stock')">Katalog</button>
       <button class="nav-tab" id="nav-api" onclick="go('api')">API &amp; Hook</button>
@@ -1288,6 +1404,113 @@ function buildDashboardHtml({ requireSecret = false } = {}) {
       </div>
     </div>
   </section>
+
+  <!-- ════════ 8. CHAT ADMIN (RIER-CHAN) ════════ -->
+  <section id="view-chat" class="hidden">
+    <div class="page-head">
+      <div>
+        <h1 class="page-title">Chat Admin (Rier-chan)</h1>
+        <p class="page-sub">Live support langsung dengan admin RierBux — kirim teks, gambar, stiker, dan tanyakan pesanan.</p>
+      </div>
+      <div class="toolbar">
+        <button class="btn-pill" onclick="openChatMedia()">Galeri Gambar</button>
+        <button class="btn-pill" onclick="loadChat(true)">Refresh Chat</button>
+      </div>
+    </div>
+
+    <div class="chat-grid">
+      <!-- Left: Chat Panel -->
+      <div class="card chat-card">
+        <div class="chat-head">
+          <div class="chat-admin-info">
+            <div class="chat-admin-ava">RC</div>
+            <div>
+              <div style="font-weight:700;font-size:14px;">Rier-chan <span id="chatAdminStatus" class="pill neutral" style="margin-left:6px;">Memuat...</span></div>
+              <div id="chatOfflineMsg" class="muted">Admin Support RierBux</div>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button id="chatLoadMoreBtn" class="btn-pill sm hidden" onclick="loadOlderChat()">↑ Pesan Lama</button>
+            <span id="chatConnTag" class="pill ok">Auto-Sync 4d</span>
+          </div>
+        </div>
+
+        <div id="chatPinsBar" class="chat-pins hidden"></div>
+        <div id="chatLog" class="chat-log"><div class="muted" style="text-align:center;padding:24px;">Memuat percakapan...</div></div>
+
+        <div class="chat-composer">
+          <div id="stickerPop" class="sticker-pop hidden"></div>
+          <div id="chatReplyBar" class="chat-reply-bar hidden">
+            <span id="chatReplyText" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></span>
+            <button class="btn-pill sm" style="height:24px;padding:0 8px;" onclick="clearChatReply()">✕</button>
+          </div>
+          <div id="chatAttachPreview" class="chat-reply-bar hidden">
+            <span id="chatAttachName"></span>
+            <button class="btn-pill sm" style="height:24px;padding:0 8px;" onclick="clearChatAttach()">✕</button>
+          </div>
+          <div class="chat-input-row">
+            <input id="chatFileInput" type="file" accept="image/*" class="hidden" onchange="handleChatImageFile(this)" />
+            <button class="icon-circle-btn" style="width:40px;height:40px;flex-shrink:0;" onclick="document.getElementById('chatFileInput').click()" title="Kirim Gambar">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+            </button>
+            <button class="icon-circle-btn" style="width:40px;height:40px;flex-shrink:0;" onclick="toggleStickerPicker()" title="Kirim Stiker">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" x2="9.01" y1="9" y2="9"/><line x1="15" x2="15.01" y1="9" y2="9"/></svg>
+            </button>
+            <textarea id="chatInput" class="chat-textarea" rows="1" placeholder="Tulis pesan untuk Rier-chan... (Enter kirim, Shift+Enter baris baru)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatNow();}"></textarea>
+            <button id="chatSendBtn" class="btn-cta" onclick="sendChatNow()">
+              <span class="cta-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></span>
+              Kirim
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Pesanan Kamu (Tanyain di Chat) -->
+      <div class="card" style="height:670px;display:flex;flex-direction:column;">
+        <div class="card-head" style="margin-bottom:10px;">
+          <span class="card-title">Pesanan Kamu</span>
+          <button class="btn-pill sm" onclick="loadChatOrders()">Refresh</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
+          <input id="chatOrdSearch" class="search-pill" placeholder="Cari RB-..., username, item..." oninput="chatOrdPage=1;loadChatOrders()" />
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+            <select id="chatOrdPay" class="select-pill" style="height:34px;font-size:12px;" onchange="chatOrdPage=1;loadChatOrders()">
+              <option value="all">Semua Bayar</option>
+              <option value="paid">Paid</option>
+              <option value="unpaid">Unpaid</option>
+              <option value="canceled">Canceled</option>
+            </select>
+            <select id="chatOrdItem" class="select-pill" style="height:34px;font-size:12px;" onchange="chatOrdPage=1;loadChatOrders()">
+              <option value="all">Semua Item</option>
+              <option value="pending">Pending</option>
+              <option value="delivered">Delivered</option>
+              <option value="failed">Failed</option>
+              <option value="canceled">Canceled</option>
+            </select>
+          </div>
+        </div>
+        <div id="chatOrdersList" style="flex:1;overflow-y:auto;padding-right:2px;"><div class="muted" style="text-align:center;padding:20px;">Memuat pesanan...</div></div>
+        <div class="pager" style="padding-top:10px;">
+          <span id="chatOrdPagerInfo">Hal 1 / 1</span>
+          <div class="pager-btns">
+            <button class="btn-pill sm" id="chatOrdPrev" onclick="chatOrdPage=Math.max(1,chatOrdPage-1);loadChatOrders()">←</button>
+            <button class="btn-pill sm" id="chatOrdNext" onclick="chatOrdPage++;loadChatOrders()">→</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- Chat Media Gallery Modal -->
+<div id="chatMediaModal" class="backdrop hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="modal wide">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h3 style="margin:0;">Galeri Gambar Chat</h3>
+      <button class="btn-pill sm" onclick="document.getElementById('chatMediaModal').classList.add('hidden')">Tutup</button>
+    </div>
+    <div id="chatMediaBody" class="media-grid"><div class="muted">Memuat galeri...</div></div>
+  </div>
 </div>
 
 <script>
@@ -1392,7 +1615,7 @@ async function api(path, opts = {}) {
 }
 
 function go(view) {
-  const valid = ["overview", "order", "cart", "orders", "coins", "stock", "api", "account"];
+  const valid = ["overview", "order", "cart", "orders", "chat", "coins", "stock", "api", "account"];
   if (!valid.includes(view)) view = "overview";
   activeView = view;
   localStorage.setItem("rb_view", view);
@@ -1402,9 +1625,11 @@ function go(view) {
     const viewEl = document.getElementById("view-" + v);
     if (viewEl) viewEl.classList.toggle("hidden", v !== view);
   }
+  if (view !== "chat") stopChatPoll();
   if (view === "overview") loadOverview(false);
   if (view === "cart") loadCart();
   if (view === "orders") loadOrders();
+  if (view === "chat") { loadChat(false); loadChatOrders(); startChatPoll(); }
   if (view === "coins") loadCoins();
   if (view === "stock") renderCatalogTable();
   if (view === "api") loadApiKeys();
@@ -1618,6 +1843,12 @@ async function loadStatus(fresh = false) {
     document.getElementById("sideUser").textContent = uName;
     document.getElementById("avatarInit").textContent = String(uName).slice(0, 2).toUpperCase();
     document.getElementById("navCartCount").textContent = String(d.cartCount || 0);
+    const chatBadge = document.getElementById("navChatBadge");
+    if (chatBadge) {
+      const u = Number(d.chatUnread || 0);
+      chatBadge.textContent = String(u);
+      chatBadge.classList.toggle("hidden", u <= 0);
+    }
     document.getElementById("coinsBalTag").textContent = d.balance !== null ? fmtNum(d.balance) + " RC (" + fmtRp(d.balance) + ")" : "- RC";
 
     if (d.stock) {
@@ -2469,6 +2700,342 @@ async function pingSheet() {
     box.innerHTML = '<div style="color:var(--ok);font-weight:600;">Google Sheet Bridge Terhubung</div><div class="muted" style="margin-top:3px;">Sheet: ' + esc(d.ping?.sheet) + ' · Rows: ' + esc(d.ping?.rows) + (d.meta ? ' · Katalog: ' + esc(d.meta.catalog_rows) : '') + '</div>';
     toast("ok", "Google Sheet Bridge OK.");
   } catch (err) { toast("err", esc(err.message)); }
+}
+
+// ── Chat Admin (Rier-chan) Logic ─────────────────────────────────────────────
+let chatMessages = [];
+let chatNextCursor = null;
+let chatStickers = [];
+let chatReplyTo = null;
+let chatPendingAttach = null;
+let chatPollTimer = null;
+let chatOrdPage = 1;
+
+function chatProxyUrl(p) {
+  if (!p) return "";
+  if (p.startsWith("http://") || p.startsWith("https://")) return p;
+  return "/api/chat/proxy?path=" + encodeURIComponent(p);
+}
+
+function stopChatPoll() {
+  if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }
+}
+function startChatPoll() {
+  stopChatPoll();
+  chatPollTimer = setInterval(() => {
+    if (activeView === "chat") pollChatNew();
+  }, 4000);
+}
+
+async function loadChat(force = false) {
+  try {
+    const d = await api("/api/chat/bootstrap");
+    const st = d.status || {};
+    const stEl = document.getElementById("chatAdminStatus");
+    stEl.textContent = st.online ? "Online" : "Offline";
+    stEl.className = "pill " + (st.online ? "ok" : "neutral");
+    document.getElementById("chatOfflineMsg").textContent = st.offlineMessage || (st.online ? "Rier-chan sedang aktif membantu" : "Admin sedang offline — pesan tetap terkirim");
+
+    const canSend = d.state?.canSend !== false;
+    document.getElementById("chatInput").disabled = !canSend;
+    document.getElementById("chatSendBtn").disabled = !canSend;
+
+    const pins = d.pins || [];
+    const pinBar = document.getElementById("chatPinsBar");
+    if (pins.length) {
+      pinBar.classList.remove("hidden");
+      pinBar.innerHTML = '<strong>📌 Disematkan:</strong> ' + esc(pins[0].content || "Pesan disematkan");
+    } else pinBar.classList.add("hidden");
+
+    chatStickers = d.stickers || [];
+    renderStickerPop();
+
+    chatMessages = (d.messages || []).slice().sort((a, b) => Number(a.id) - Number(b.id));
+    chatNextCursor = d.nextCursor ?? null;
+    document.getElementById("chatLoadMoreBtn").classList.toggle("hidden", !chatNextCursor);
+    renderChatMessages(true);
+
+    if (d.state?.unread > 0 || force) {
+      api("/api/chat/read", { method: "POST", body: "{}" }).catch(() => {});
+      const b = document.getElementById("navChatBadge");
+      if (b) b.classList.add("hidden");
+    }
+  } catch (err) {
+    document.getElementById("chatLog").innerHTML = '<div class="muted" style="text-align:center;padding:24px;color:var(--err);">' + esc(err.message) + '</div>';
+  }
+}
+
+async function pollChatNew() {
+  if (!chatMessages.length) return;
+  const latestId = chatMessages[chatMessages.length - 1]?.id;
+  if (!latestId) return;
+  try {
+    const res = await fetch("/api/chat/messages?after=" + encodeURIComponent(latestId) + "&limit=30", {
+      headers: dashSecret ? { "x-api-key": dashSecret } : {},
+    });
+    const d = await res.json().catch(() => null);
+    if (!d?.ok || !Array.isArray(d.messages) || !d.messages.length) return;
+    const seen = new Set(chatMessages.map(m => Number(m.id)));
+    let added = 0;
+    for (const m of d.messages) {
+      if (!seen.has(Number(m.id))) { chatMessages.push(m); added++; }
+    }
+    if (added > 0) {
+      chatMessages.sort((a, b) => Number(a.id) - Number(b.id));
+      renderChatMessages(true);
+      api("/api/chat/read", { method: "POST", body: "{}" }).catch(() => {});
+    }
+  } catch {}
+}
+
+async function loadOlderChat() {
+  if (!chatNextCursor) return;
+  try {
+    const d = await api("/api/chat/messages?cursor=" + encodeURIComponent(chatNextCursor) + "&limit=30");
+    const older = d.messages || [];
+    chatNextCursor = d.nextCursor ?? null;
+    document.getElementById("chatLoadMoreBtn").classList.toggle("hidden", !chatNextCursor);
+    const seen = new Set(chatMessages.map(m => Number(m.id)));
+    for (const m of older) {
+      if (!seen.has(Number(m.id))) chatMessages.push(m);
+    }
+    chatMessages.sort((a, b) => Number(a.id) - Number(b.id));
+    renderChatMessages(false);
+  } catch (err) { toast("err", esc(err.message)); }
+}
+
+function formatChatBody(text) {
+  let s = esc(text || "");
+  s = s.replace(/(https?:\\/\\/[^\\s<]+)/g, '<a class="ext" style="color:inherit;text-decoration:underline;" target="_blank" href="$1">$1</a>');
+  s = s.replace(/#(RB-[A-Z0-9]+)/gi, '<a href="javascript:void(0)" style="color:inherit;font-weight:700;text-decoration:underline;" onclick="filterChatOrderById(\\'$1\\')">#$1</a>');
+  return s;
+}
+
+function filterChatOrderById(publicId) {
+  const el = document.getElementById("chatOrdSearch");
+  if (el) { el.value = publicId; chatOrdPage = 1; loadChatOrders(); }
+}
+
+function renderChatMessages(scrollBottom = false) {
+  const el = document.getElementById("chatLog");
+  if (!el) return;
+  if (!chatMessages.length) {
+    el.innerHTML = '<div class="muted" style="text-align:center;padding:24px;">Belum ada pesan. Mulai chat dengan Rier-chan di bawah!</div>';
+    return;
+  }
+  let html = "";
+  let lastDate = "";
+  for (const m of chatMessages) {
+    const dt = String(m.createdAt || "").slice(0, 10);
+    if (dt && dt !== lastDate) {
+      lastDate = dt;
+      html += '<div class="chat-date-div"><span>' + esc(dt) + '</span></div>';
+    }
+    const isUser = m.senderRole === "user";
+    const deleted = Boolean(m.deletedBy);
+    let inner = "";
+    if (m.replyTo && !deleted) {
+      inner += '<div class="msg-reply-quote">' + esc(m.replyTo.content || "Lampiran / Stiker").slice(0, 110) + '</div>';
+    }
+    if (deleted) {
+      inner += 'Pesan dihapus' + (m.deletedBy === "admin" ? ' oleh admin' : '');
+    } else {
+      if (m.stickerId || m.type === "sticker") {
+        const sUrl = m.stickerUrl || (m.stickerId ? "/api/chat/stickers/" + m.stickerId + "/image?thumb=1" : "");
+        if (sUrl) inner += '<img class="msg-sticker" src="' + chatProxyUrl(sUrl) + '" alt="Stiker" loading="lazy" />';
+      }
+      if (m.content) inner += '<div>' + formatChatBody(m.content) + '</div>';
+      if (Array.isArray(m.attachments) && m.attachments.length) {
+        inner += m.attachments.map(a => {
+          const u = chatProxyUrl(a.url);
+          return '<a href="' + u + '" target="_blank"><img class="msg-img" src="' + u + '" loading="lazy" alt="Lampiran" /></a>';
+        }).join("");
+      }
+      if (m.linkPreview && m.linkPreview.url) {
+        inner += '<a class="msg-link-card" target="_blank" href="' + esc(m.linkPreview.url) + '"><div style="font-weight:600;font-size:12px;">' + esc(m.linkPreview.title || m.linkPreview.url) + '</div>' +
+          (m.linkPreview.description ? '<div class="muted" style="font-size:11px;margin-top:2px;">' + esc(m.linkPreview.description).slice(0, 110) + '</div>' : '') + '</a>';
+      }
+    }
+
+    const timeStr = String(m.createdAt || "").slice(11, 16);
+    const acts = deleted ? "" : '<span class="msg-acts">' +
+      '<button class="msg-act-btn" onclick="setChatReply(' + m.id + ')">Balas</button>' +
+      (isUser ? '<button class="msg-act-btn" onclick="editChatPrompt(' + m.id + ')">Edit</button><button class="msg-act-btn" onclick="deleteChatPrompt(' + m.id + ')">Hapus</button>' : '') +
+      '<button class="msg-act-btn" onclick="pinChatToggle(' + m.id + ')">Pin</button></span>';
+
+    html += '<div class="msg-row ' + (isUser ? 'user' : 'admin') + '">' +
+      '<div class="msg-bubble' + (deleted ? ' deleted' : '') + '">' + inner + '</div>' +
+      '<div class="msg-meta"><span>' + (isUser ? 'Kamu' : 'Rier-chan') + ' · ' + esc(timeStr) + (m.editedAt ? ' · diedit' : '') + '</span>' + acts + '</div></div>';
+  }
+  el.innerHTML = html;
+  if (scrollBottom) el.scrollTop = el.scrollHeight;
+}
+
+function setChatReply(id) {
+  const m = chatMessages.find(x => Number(x.id) === Number(id));
+  if (!m) return;
+  chatReplyTo = m;
+  document.getElementById("chatReplyText").textContent = "Membalas " + (m.senderRole === "user" ? "Kamu" : "Rier-chan") + ": " + (m.content || "Lampiran").slice(0, 70);
+  document.getElementById("chatReplyBar").classList.remove("hidden");
+  document.getElementById("chatInput").focus();
+}
+function clearChatReply() { chatReplyTo = null; document.getElementById("chatReplyBar").classList.add("hidden"); }
+function clearChatAttach() { chatPendingAttach = null; document.getElementById("chatAttachPreview").classList.add("hidden"); document.getElementById("chatFileInput").value = ""; }
+
+function handleChatImageFile(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  if (file.size > 3 * 1024 * 1024) { toast("err", "Ukuran gambar maksimal 3 MB."); input.value = ""; return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = async () => {
+      try {
+        toast("ok", "Mengunggah gambar...");
+        const up = await api("/api/chat/upload", {
+          method: "POST",
+          body: JSON.stringify({ filename: file.name, mimeType: file.type || "image/png", base64: reader.result, width: img.width, height: img.height }),
+        });
+        chatPendingAttach = up.attachment;
+        document.getElementById("chatAttachName").textContent = "📷 Siap dikirim: " + file.name + " (" + img.width + "×" + img.height + ")";
+        document.getElementById("chatAttachPreview").classList.remove("hidden");
+        toast("ok", "Gambar siap dikirim.");
+      } catch (err) { toast("err", esc(err.message)); }
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function renderStickerPop() {
+  const pop = document.getElementById("stickerPop");
+  if (!pop) return;
+  if (!chatStickers.length) { pop.innerHTML = '<div class="muted" style="grid-column:1/-1;text-align:center;padding:12px;">Belum ada stiker.</div>'; return; }
+  pop.innerHTML = chatStickers.slice(0, 32).map(s =>
+    '<button class="sticker-item" onclick="sendStickerNow(' + s.id + ')"><img src="' + chatProxyUrl(s.url) + '" loading="lazy" alt="Stiker" /></button>'
+  ).join("");
+}
+function toggleStickerPicker() { document.getElementById("stickerPop").classList.toggle("hidden"); }
+
+async function sendStickerNow(stickerId) {
+  document.getElementById("stickerPop").classList.add("hidden");
+  try {
+    await api("/api/chat/send", { method: "POST", body: JSON.stringify({ content: "", attachments: [], stickerId, replyToMessageId: chatReplyTo?.id }) });
+    clearChatReply();
+    await pollChatNew();
+    loadChat(false);
+  } catch (err) { toast("err", esc(err.message)); }
+}
+
+async function sendChatNow() {
+  const inp = document.getElementById("chatInput");
+  const content = inp.value.trim();
+  if (!content && !chatPendingAttach) return;
+  try {
+    await api("/api/chat/send", {
+      method: "POST",
+      body: JSON.stringify({
+        content,
+        attachments: chatPendingAttach ? [chatPendingAttach] : [],
+        replyToMessageId: chatReplyTo?.id,
+      }),
+    });
+    inp.value = "";
+    clearChatReply();
+    clearChatAttach();
+    await loadChat(false);
+  } catch (err) { toast("err", esc(err.message)); }
+}
+
+async function editChatPrompt(id) {
+  const m = chatMessages.find(x => Number(x.id) === Number(id));
+  const next = prompt("Edit pesan:", m?.content || "");
+  if (next === null || !next.trim()) return;
+  try {
+    await api("/api/chat/action", { method: "POST", body: JSON.stringify({ action: "edit", messageId: id, content: next.trim() }) });
+    toast("ok", "Pesan diperbarui.");
+    loadChat(false);
+  } catch (err) { toast("err", esc(err.message)); }
+}
+async function deleteChatPrompt(id) {
+  const ok = await askModal({ title: "Hapus Pesan", desc: "Yakin ingin menghapus pesan ini?", okLabel: "Hapus" });
+  if (!ok) return;
+  try {
+    await api("/api/chat/action", { method: "POST", body: JSON.stringify({ action: "delete", messageId: id }) });
+    toast("warn", "Pesan dihapus.");
+    loadChat(false);
+  } catch (err) { toast("err", esc(err.message)); }
+}
+async function pinChatToggle(id) {
+  try {
+    await api("/api/chat/action", { method: "POST", body: JSON.stringify({ action: "pin", messageId: id, pinned: true }) });
+    toast("ok", "Pesan disematkan.");
+    loadChat(false);
+  } catch (err) { toast("err", esc(err.message)); }
+}
+
+async function openChatMedia() {
+  document.getElementById("chatMediaModal").classList.remove("hidden");
+  document.getElementById("chatMediaBody").innerHTML = '<div class="muted">Memuat galeri gambar...</div>';
+  try {
+    const d = await api("/api/chat/media?limit=30");
+    const imgs = [];
+    for (const item of (d.items || [])) {
+      for (const a of (item.attachments || [])) imgs.push(a.url);
+    }
+    if (!imgs.length) {
+      document.getElementById("chatMediaBody").innerHTML = '<div class="muted">Belum ada gambar di chat ini.</div>';
+      return;
+    }
+    document.getElementById("chatMediaBody").innerHTML = imgs.map(u => {
+      const pu = chatProxyUrl(u);
+      return '<a href="' + pu + '" target="_blank"><img src="' + pu + '" loading="lazy" alt="Media" /></a>';
+    }).join("");
+  } catch (err) { document.getElementById("chatMediaBody").innerHTML = '<div style="color:var(--err);">' + esc(err.message) + '</div>'; }
+}
+
+async function loadChatOrders() {
+  try {
+    const q = document.getElementById("chatOrdSearch")?.value.trim() || "";
+    const st = document.getElementById("chatOrdPay")?.value || "all";
+    const ist = document.getElementById("chatOrdItem")?.value || "all";
+    const d = await api("/api/chat/orders?page=" + chatOrdPage + "&limit=10&status=" + encodeURIComponent(st) + "&itemStatus=" + encodeURIComponent(ist) + "&search=" + encodeURIComponent(q));
+    const orders = d.orders || [];
+    const pg = d.pagination || { currentPage: chatOrdPage, totalPages: 1 };
+    chatOrdPage = pg.currentPage || chatOrdPage;
+    document.getElementById("chatOrdPagerInfo").textContent = "Hal " + chatOrdPage + " / " + (pg.totalPages || 1);
+    document.getElementById("chatOrdPrev").disabled = !pg.hasPreviousPage && chatOrdPage <= 1;
+    document.getElementById("chatOrdNext").disabled = !pg.hasNextPage && chatOrdPage >= (pg.totalPages || 1);
+
+    const el = document.getElementById("chatOrdersList");
+    if (!orders.length) { el.innerHTML = '<div class="muted" style="text-align:center;padding:20px;">Tidak ada pesanan cocok.</div>'; return; }
+    el.innerHTML = orders.map(o => {
+      const pay = classifyPayStatus(o.paymentStatus);
+      const items = o.orderItems || [];
+      const prodNames = [...new Set(items.map(i => i.productName).filter(Boolean))].join(", ");
+      const first = items[0] || {};
+      const itCls = classifyItemStatus(first.status, o.paymentStatus).cls;
+      const total = items.reduce((s, i) => s + Number(i.totalPrice || 0), 0);
+      return '<div class="chat-order-card">' +
+        '<div class="chat-order-top"><code>#' + esc(o.publicId) + '</code><span class="pill ' + pay.cls + '">' + esc(o.paymentStatus) + '</span></div>' +
+        '<div class="chat-order-item">' +
+          (first.imageUrl ? '<img src="' + esc(first.imageUrl) + '" loading="lazy" alt="" />' : '') +
+          '<div style="min-width:0;flex:1;"><div style="font-weight:600;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(first.productName || "-") + ' · ' + esc(first.itemName || "-") + '</div>' +
+          '<div class="muted" style="font-size:11px;">' + (first.robloxUsername ? '@' + esc(first.robloxUsername) + ' · ' : '') + fmtRp(total) + '</div></div>' +
+        '</div>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">' +
+          '<span class="pill ' + itCls + '">' + esc(first.status || "-") + '</span>' +
+          '<div class="btn-row"><button class="btn-pill sm" onclick="openOrderDetail(\\'' + esc(o.publicId) + '\\')">Detail</button>' +
+          '<button class="btn-pill sm obsidian" onclick="askOrderInChat(\\'' + esc(o.publicId) + '\\',\\'' + esc(prodNames).replace(/'/g, "") + '\\',\\'' + esc(o.paymentStatus) + '\\')">Tanyain</button></div>' +
+        '</div></div>';
+    }).join("");
+  } catch (err) { document.getElementById("chatOrdersList").innerHTML = '<div class="muted">' + esc(err.message) + '</div>'; }
+}
+
+function askOrderInChat(publicId, prodNames, payStatus) {
+  const inp = document.getElementById("chatInput");
+  inp.value = "Halo min, mau nanya soal pesanan #" + publicId + (prodNames ? " (" + prodNames + ")" : "") + " - " + payStatus;
+  inp.focus();
 }
 
 function tickClock() {

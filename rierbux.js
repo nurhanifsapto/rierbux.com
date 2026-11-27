@@ -131,6 +131,15 @@ const DEFAULT_ACTION_IDS = {
   createMembershipOrderAction: "7f43eaba45d00e714d2e08eb6f95565f331272959f",
   payMembershipWithBalanceAction: "7fb1c5e64ae5a5688093e585b8ca8906cedab03ac1",
   whatsAppSetupAction: "7f807081606783e3080b1017f888c7909f8a321036",
+
+  // Chat Admin (Rier-chan)
+  sendChatMessageAction: "7ffaf766f0ceca679ad1e14207c993264d77de4c22",
+  markChatReadAction: "7f9f4f0805f63ab4c956fb2ab7b71402dba95a290d",
+  editChatMessageAction: "7f3a432fc5c2bd265a8a0ecc0e1cbfc2e98e0445dd",
+  deleteChatMessageAction: "7f925e0576035278ff229b90a77150df96384fa2fe",
+  setChatMessagePinnedAction: "7f76658b8cde985650b2eccd7360b23878fa521626",
+  saveStickerFromMessageAction: "7f35780f912e31241ffc7fdbbbe11a982d799269fb",
+  unsaveStickerFromMessageAction: "7f21b8a4d45db735b0efd8e4d063b3855d1a883c7a",
 };
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
@@ -2141,6 +2150,158 @@ class RierBuxBot {
       orderItemId: Number(orderItemId),
     });
     return res.data;
+  }
+
+  // ── Chat Admin (Rier-chan — https://rierbux.com/chat) ────────────────────
+  async getChatStatus() {
+    const r = await this.fetchJson("/api/chat/status", { requireAuth: true });
+    if (!r.ok || !r.json) throw new Error(`Gagal cek status admin chat (HTTP ${r.status})`);
+    return r.json.data ?? r.json;
+  }
+
+  async getChatState() {
+    const r = await this.fetchJson("/api/chat/state", { requireAuth: true });
+    if (!r.ok || !r.json) throw new Error(`Gagal cek state chat (HTTP ${r.status})`);
+    return r.json.data ?? r.json;
+  }
+
+  async getChatMessages({ limit = 30, cursor, after, around, newerThan } = {}) {
+    const qs = new URLSearchParams({ limit: String(limit) });
+    if (cursor) qs.set("cursor", String(cursor));
+    if (after) qs.set("after", String(after));
+    if (around) qs.set("around", String(around));
+    if (newerThan) qs.set("newerThan", String(newerThan));
+    const r = await this.fetchJson(`/api/chat/messages?${qs.toString()}`, { requireAuth: true });
+    if (!r.ok || !r.json) throw new Error(`Gagal ambil pesan chat (HTTP ${r.status})`);
+    return r.json.data ?? { messages: [], nextCursor: null };
+  }
+
+  async getChatPins() {
+    const r = await this.fetchJson("/api/chat/pins", { requireAuth: true });
+    if (!r.ok || !r.json) throw new Error(`Gagal ambil pinned messages (HTTP ${r.status})`);
+    return r.json.data ?? [];
+  }
+
+  async getChatStickers() {
+    const r = await this.fetchJson("/api/chat/stickers", { requireAuth: true });
+    if (!r.ok || !r.json) throw new Error(`Gagal ambil stickers (HTTP ${r.status})`);
+    return r.json.data ?? [];
+  }
+
+  async getChatMedia({ limit = 30, cursor } = {}) {
+    const qs = new URLSearchParams({ limit: String(limit) });
+    if (cursor) qs.set("cursor", String(cursor));
+    const r = await this.fetchJson(`/api/chat/media?${qs.toString()}`, { requireAuth: true });
+    if (!r.ok || !r.json) throw new Error(`Gagal ambil galeri chat (HTTP ${r.status})`);
+    return r.json.data ?? { items: [], nextCursor: null };
+  }
+
+  async getChatOrders({ page = 1, limit = 10, status, itemStatus, search } = {}) {
+    const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (status && status !== "all") qs.set("status", String(status));
+    if (itemStatus && itemStatus !== "all") qs.set("itemStatus", String(itemStatus));
+    if (search) qs.set("search", String(search).slice(0, 100));
+    const r = await this.fetchJson(`/api/chat/orders?${qs.toString()}`, { requireAuth: true });
+    if (!r.ok || !r.json) throw new Error(`Gagal ambil pesanan chat (HTTP ${r.status})`);
+    const data = r.json.data ?? { orders: [], pagination: {} };
+    // Lengkapi imageUrl penuh untuk setiap item
+    if (Array.isArray(data.orders)) {
+      for (const o of data.orders) {
+        for (const it of o.orderItems || []) {
+          if (it.itemImagePath && !it.imageUrl) it.imageUrl = toUploadUrl(it.itemImagePath);
+        }
+      }
+    }
+    return data;
+  }
+
+  async sendChatMessage({ content = "", attachments = [], replyToMessageId, stickerId, clientNonce } = {}) {
+    const payload = {
+      content: String(content || ""),
+      attachments: Array.isArray(attachments) ? attachments : [],
+      clientNonce: clientNonce || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
+    };
+    if (replyToMessageId) payload.replyToMessageId = Number(replyToMessageId);
+    if (stickerId) payload.stickerId = Number(stickerId);
+    const res = await this.callServerAction("/chat", "sendChatMessageAction", payload);
+    if (res.data?.serverError) throw new Error(res.data.serverError);
+    return res.data?.data?.message || res.data?.message || res.data;
+  }
+
+  async markChatRead() {
+    const res = await this.callServerAction("/chat", "markChatReadAction", "$undefined");
+    return res.data ?? { ok: true };
+  }
+
+  async editChatMessage(messageId, content) {
+    const res = await this.callServerAction("/chat", "editChatMessageAction", {
+      messageId: Number(messageId),
+      content: String(content || ""),
+    });
+    if (res.data?.serverError) throw new Error(res.data.serverError);
+    return res.data;
+  }
+
+  async deleteChatMessage(messageId) {
+    const res = await this.callServerAction("/chat", "deleteChatMessageAction", {
+      messageId: Number(messageId),
+    });
+    if (res.data?.serverError) throw new Error(res.data.serverError);
+    return res.data;
+  }
+
+  async setChatMessagePinned(messageId, pinned = true) {
+    const res = await this.callServerAction("/chat", "setChatMessagePinnedAction", {
+      messageId: Number(messageId),
+      pinned: Boolean(pinned),
+    });
+    if (res.data?.serverError) throw new Error(res.data.serverError);
+    return res.data;
+  }
+
+  async uploadChatImage({ filename = "image.png", mimeType = "image/png", buffer, width = 800, height = 600 }) {
+    if (!Buffer.isBuffer(buffer) || buffer.length === 0) throw new Error("File gambar kosong.");
+    if (buffer.length > 3 * 1024 * 1024) throw new Error("Ukuran gambar maks 3 MB.");
+    const presign = await this.fetchJson("/api/upload", {
+      method: "POST",
+      requireAuth: true,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        route: "chat-images",
+        metadata: {},
+        files: [{ name: filename, size: buffer.length, type: mimeType }],
+      }),
+    });
+    if (!presign.ok || !presign.json) throw new Error(`Gagal presign upload gambar (HTTP ${presign.status})`);
+    const first = (presign.json.files || presign.json.data?.files || [])[0];
+    if (!first?.signedUrl) throw new Error("Response presign upload tidak berisi signedUrl.");
+    const key = first.file?.objectInfo?.key || first.objectInfo?.key || first.key;
+    const putHeaders = {
+      "content-type": mimeType,
+      ...(first.headers || {}),
+    };
+    const putRes = await fetch(first.signedUrl, {
+      method: "PUT",
+      headers: putHeaders,
+      body: buffer,
+    });
+    if (!putRes.ok) throw new Error(`Gagal upload file ke storage (HTTP ${putRes.status})`);
+    return { key, width: Number(width) || 800, height: Number(height) || 600 };
+  }
+
+  async fetchChatMediaProxy(mediaPath) {
+    const clean = String(mediaPath || "").trim();
+    if (!clean.startsWith("/api/chat/")) throw new Error("Path media chat tidak valid.");
+    const cookieHeader = this.jar.toHeader();
+    const res = await fetch(`${BASE_URL}${clean}`, {
+      headers: {
+        "user-agent": USER_AGENT,
+        ...(cookieHeader ? { cookie: cookieHeader } : {}),
+      },
+    });
+    if (!res.ok) throw new Error(`Gagal muat media chat (HTTP ${res.status})`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    return { buffer: buf, contentType: res.headers.get("content-type") || "application/octet-stream" };
   }
 }
 
