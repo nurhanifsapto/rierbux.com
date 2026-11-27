@@ -686,17 +686,37 @@ function createDashboardServer(bot, { port = 3030, host = "127.0.0.1", secret = 
         try {
           const result = await bot.buyProduct(spec);
           let endingBal = null;
+          let deliveryStatus = result.dryRun ? "DRY_RUN" : "PROCESSING";
+          let deliveryReason = "";
           if (!result.dryRun) {
             try {
               const b = await bot.getBalance();
               endingBal = b.riercoins;
             } catch {}
+            try {
+              const st = await bot.getOrderStatus(result.order.publicId);
+              const classified = wh.classifyDeliveryStatus(st);
+              deliveryStatus = classified.status;
+              deliveryReason = classified.reason;
+            } catch {}
             if (body.ref) {
-              await reporter({ ref: body.ref, status: "SUCCESS", order: result.order, endingBalance: endingBal });
+              await reporter({
+                ref: body.ref,
+                status: deliveryStatus,
+                order: result.order,
+                endingBalance: endingBal,
+                error: deliveryStatus === "FAILED" ? deliveryReason : "",
+              });
             }
-            pushLog("ok", `✅ [WEBHOOK SUCCESS] ref=${body.ref || "-"} | #${result.order.publicId}`);
+            if (deliveryStatus === "SUCCESS") {
+              pushLog("ok", `✅ [WEBHOOK SUCCESS] ref=${body.ref || "-"} | #${result.order.publicId}`);
+            } else if (deliveryStatus === "FAILED") {
+              pushLog("err", `❌ [WEBHOOK FAILED] ref=${body.ref || "-"} | #${result.order.publicId} → ${deliveryReason}`);
+            } else {
+              pushLog("info", `⏳ [WEBHOOK PROCESSING] ref=${body.ref || "-"} | #${result.order.publicId} (paid, menunggu delivery)`);
+            }
           }
-          return sendJson(res, 200, { ok: true, ref: body.ref || null, ending_balance: endingBal, ...result });
+          return sendJson(res, 200, { ok: true, ref: body.ref || null, delivery_status: deliveryStatus, ending_balance: endingBal, ...result });
         } catch (err) {
           pushLog("err", `❌ [WEBHOOK FAILED] ref=${body.ref || "-"} → ${err.message}`);
           if (body.ref && !spec.dryRun) {
@@ -707,7 +727,7 @@ function createDashboardServer(bot, { port = 3030, host = "127.0.0.1", secret = 
               error: err.message,
             });
           }
-          return sendJson(400, { ok: false, ref: body.ref || null, error: err.message });
+          return sendJson(res, 400, { ok: false, ref: body.ref || null, error: err.message });
         }
       }
 

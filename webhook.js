@@ -174,6 +174,49 @@ async function uploadCatalogToSheet(catalog) {
   return up.rows ?? rows.length;
 }
 
+/**
+ * Klasifikasikan response dari GET /api/orders/status?publicId=...
+ * Contoh: { paymentStatus: "paid", itemStatuses: ["pending"|"delivered"|"failed"|"canceled"|"void"], refundedAmount: 0 }
+ * Mengembalikan { status: "PROCESSING"|"SUCCESS"|"FAILED", final: boolean, reason: string }
+ */
+function classifyDeliveryStatus(st) {
+  if (!st || typeof st !== "object") {
+    return { status: "PROCESSING", final: false, reason: "" };
+  }
+  const payStatus = String(st.paymentStatus || "").toLowerCase();
+  const refunded = Number(st.refundedAmount || 0);
+  const items = Array.isArray(st.itemStatuses)
+    ? st.itemStatuses.map((s) => String(s || "").toLowerCase())
+    : [];
+
+  if (refunded > 0) {
+    return {
+      status: "FAILED",
+      final: true,
+      reason: `Order di-refund ke RierCoins (+${refunded} RC)`,
+    };
+  }
+  if (["failed", "canceled", "cancelled", "expired"].includes(payStatus)) {
+    return {
+      status: "FAILED",
+      final: true,
+      reason: `Pembayaran ${payStatus}`,
+    };
+  }
+  if (items.length > 0 && items.every((s) => s === "delivered" || s === "completed" || s === "success")) {
+    return { status: "SUCCESS", final: true, reason: "" };
+  }
+  const badItem = items.find((s) => ["failed", "canceled", "cancelled", "void", "refunded"].includes(s));
+  if (badItem) {
+    return {
+      status: "FAILED",
+      final: true,
+      reason: `Status item di RierBux: ${badItem}`,
+    };
+  }
+  return { status: "PROCESSING", final: false, reason: "" };
+}
+
 /** Kirim hasil transaksi ke tab "Orders" Google Sheet v3 + optional outbound callback */
 async function reportResultToSheet({ ref, status, order, endingBalance, error }) {
   const payload = {
@@ -184,7 +227,7 @@ async function reportResultToSheet({ ref, status, order, endingBalance, error })
     product: order?.product || "",
     item: order?.itemName ? `${order.itemName}${order.quantity > 1 ? ` x${order.quantity}` : ""}` : "",
     player_id: order?.roblox?.username || order?.placeId || "",
-    amount: order?.expectedTotal !== undefined ? String(order.expectedTotal) : "",
+    amount: order?.expectedTotal !== undefined && order?.expectedTotal !== "" ? String(order.expectedTotal) : "",
     ending_balance: endingBalance !== undefined && endingBalance !== null ? String(endingBalance) : "",
     order_url: order?.orderUrl || "",
     error: error || "",
@@ -198,13 +241,17 @@ async function reportResultToSheet({ ref, status, order, endingBalance, error })
       console.error(`⚠️  [GSHEET RESULT] Gagal kirim result ref=${ref}: ${err.message}`);
     }
   }
-  await sendOutboundWebhook({ event: "order.result", ...payload });
+  await sendOutboundWebhook({
+    event: payload.status === "PROCESSING" ? "order.processing" : "order.result",
+    ...payload,
+  });
   return sheetRes;
 }
 
 /** Jalankan 24/7 Queue Worker + Web Dashboard Console (persis kayak `node idv.js worker`!) */
 async function runWorker(bot, { createDashboardServer, syncCatalog, fmtWIB }) {
   const pollMs = Math.max(2000, parseInt(process.env.POLL_INTERVAL_MS || "5000", 10) || 5000);
+  const deliveryPollMs = Math.max(5000, parseInt(process.env.DELIVERY_POLL_MS || "15000", 10) || 15000);
   const port = parseInt(process.env.HEALTH_PORT || process.env.PORT || "3030", 10) || 3030;
   const host = process.env.DASHBOARD_HOST || "0.0.0.0";
   const secret = (process.env.DASHBOARD_SECRET || process.env.GSHEET_SECRET || "").trim();
@@ -214,12 +261,14 @@ async function runWorker(bot, { createDashboardServer, syncCatalog, fmtWIB }) {
     running: true,
     busy: false,
     processed: 0,
+    processing: 0,
     failed: 0,
     lastPollAt: null,
     lastSaldo: null,
     lastStockStr: null,
     catalogRows: 0,
     lastCatalogSyncAt: 0,
+    lastDeliveryPollAt: 0,
   };
 
   // Start Web Dashboard + Direct Webhook HTTP server
@@ -317,14 +366,43 @@ async function runWorker(bot, { createDashboardServer, syncCatalog, fmtWIB }) {
             if (endingBal !== null) workerState.lastSaldo = String(endingBal);
           } catch {}
 
-          workerState.processed += 1;
-          await reportResultToSheet({
-            ref: order.ref,
-            status: "SUCCESS",
-            order: result.order,
-            endingBalance: endingBal,
-          });
-          console.log(`✅ [SUCCESS] ref=${order.ref} | OrderID=#${result.order.publicId} | Sisa Saldo=${endingBal ?? "-"} RC`);
+          let initialStatus = "PROCESSING";
+          let initialReason = "";
+          try {
+            const st = await bot.getOrderStatus(result.order.publicId);
+            const classified = classifyDeliveryStatus(st);
+            initialStatus = classified.status;
+            initialReason = classified.reason;
+          } catch {}
+
+          if (initialStatus === "SUCCESS") {
+            workerState.processed += 1;
+            await reportResultToSheet({
+              ref: order.ref,
+              status: "SUCCESS",
+              order: result.order,
+              endingBalance: endingBal,
+            });
+            console.log(`✅ [SUCCESS] ref=${order.ref} | OrderID=#${result.order.publicId} | Sisa Saldo=${endingBal ?? "-"} RC`);
+          } else if (initialStatus === "FAILED") {
+            workerState.failed += 1;
+            await reportResultToSheet({
+              ref: order.ref,
+              status: "FAILED",
+              order: result.order,
+              endingBalance: endingBal,
+              error: initialReason || "Order gagal diproses di RierBux",
+            });
+            console.error(`❌ [FAILED] ref=${order.ref} | OrderID=#${result.order.publicId} → ${initialReason}`);
+          } else {
+            await reportResultToSheet({
+              ref: order.ref,
+              status: "PROCESSING",
+              order: result.order,
+              endingBalance: endingBal,
+            });
+            console.log(`⏳ [PROCESSING] ref=${order.ref} | OrderID=#${result.order.publicId} (paid, menunggu delivered di RierBux) | Sisa Saldo=${endingBal ?? "-"} RC`);
+          }
         } catch (err) {
           workerState.failed += 1;
           const cleanErr = String(err.message || err).replace(/\s+/g, " ").slice(0, 300);
@@ -343,6 +421,81 @@ async function runWorker(bot, { createDashboardServer, syncCatalog, fmtWIB }) {
           workerState.busy = false;
         }
       }
+
+      // Poll status delivery untuk semua order yang masih PROCESSING di Google Sheet (bertahan meski container restart!)
+      if (workerState.running && Date.now() - workerState.lastDeliveryPollAt >= deliveryPollMs) {
+        workerState.lastDeliveryPollAt = Date.now();
+        try {
+          const procRes = await callSheetBridge("processing");
+          const procRows = Array.isArray(procRes.data) ? procRes.data : [];
+          workerState.processing = procRows.length;
+
+          for (const row of procRows) {
+            if (!workerState.running) break;
+            if (!row.ref || !row.t_id) continue;
+            try {
+              const st = await bot.getOrderStatus(row.t_id);
+              const classified = classifyDeliveryStatus(st);
+              if (!classified.final) continue;
+
+              let endingBal = null;
+              try {
+                const bNow = await bot.getBalance();
+                endingBal = bNow.riercoins;
+                if (endingBal !== null) workerState.lastSaldo = String(endingBal);
+              } catch {}
+
+              if (classified.status === "SUCCESS") {
+                workerState.processed += 1;
+                await reportResultToSheet({
+                  ref: row.ref,
+                  status: "SUCCESS",
+                  order: {
+                    publicId: row.t_id,
+                    product: row.product,
+                    itemName: row.item,
+                    roblox: { username: row.player_id },
+                    expectedTotal: row.amount || undefined,
+                    orderUrl: row.order_url,
+                  },
+                  endingBalance: endingBal,
+                });
+                console.log(`✅ [DELIVERED] ref=${row.ref} | OrderID=#${row.t_id} → SUCCESS`);
+              } else {
+                let failReason = classified.reason || "Order gagal dikirim di RierBux";
+                try {
+                  const det = await bot.getOrderDetail(row.t_id);
+                  const itemErr = (det?.items || []).map((i) => i.failureReason).filter(Boolean).join("; ");
+                  if (itemErr) failReason = `${failReason} — ${itemErr}`.slice(0, 300);
+                } catch {}
+                workerState.failed += 1;
+                await reportResultToSheet({
+                  ref: row.ref,
+                  status: "FAILED",
+                  order: {
+                    publicId: row.t_id,
+                    product: row.product,
+                    itemName: row.item,
+                    roblox: { username: row.player_id },
+                    expectedTotal: row.amount || undefined,
+                    orderUrl: row.order_url,
+                  },
+                  endingBalance: endingBal,
+                  error: failReason,
+                });
+                console.error(`❌ [DELIVERY FAILED] ref=${row.ref} | OrderID=#${row.t_id} → ${failReason}`);
+              }
+            } catch (err) {
+              console.error(`⚠️  [DELIVERY CHECK] ref=${row.ref} (#${row.t_id}): ${err.message}`);
+            }
+          }
+        } catch (err) {
+          // Jika Apps Script belum di-update dengan action "processing", tampilkan warning tanpa mengganggu antrean
+          if (!String(err.message || "").includes("action tidak dikenal")) {
+            console.error(`⚠️  [DELIVERY POLL ERROR] ${err.message}`);
+          }
+        }
+      }
     } catch (err) {
       console.error(`⚠️  [POLL ERROR] ${err.message}`);
     }
@@ -355,6 +508,7 @@ module.exports = {
   callSheetBridge,
   sendOutboundWebhook,
   parseOrderSpec,
+  classifyDeliveryStatus,
   uploadCatalogToSheet,
   reportResultToSheet,
   runWorker,

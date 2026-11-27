@@ -355,6 +355,11 @@ function doPost(e) {
         return jawab_({ ok: true, data: out });
       }
 
+      case "processing": {
+        const out = bacaSemuaBaris_(sheet, k).filter((b) => b.ref && b.status === "PROCESSING" && b.t_id);
+        return jawab_({ ok: true, data: out });
+      }
+
       case "claim": {
         const ref = String(data.ref || "").trim();
         const r = cariBarisRef_(sheet, k, ref);
@@ -375,31 +380,35 @@ function doPost(e) {
           tulisSel_(sheet, k, r, "Tanggal", data.trx_date || sekarang_());
         }
         const sudah = bacaBaris_(sheet, k, r);
-        if (ref && (sudah.status === "SUCCESS" || sudah.status === "FAILED") && sudah.acked) {
+        if (ref && (sudah.status === "SUCCESS" || sudah.status === "FAILED" || sudah.status === "REFUNDED") && sudah.acked) {
           return jawab_({ ok: true, row: r, message: "baris sudah final dan sudah diterima GerbangAPI; tidak diubah" });
         }
-        const status = String(data.status || "SUCCESS").toUpperCase() === "FAILED" ? "FAILED" : "SUCCESS";
+        const ALLOWED_STATUS = { PENDING: 1, PROCESSING: 1, SUCCESS: 1, FAILED: 1, REFUNDED: 1 };
+        const rawStatus = String(data.status || "SUCCESS").toUpperCase();
+        const status = ALLOWED_STATUS[rawStatus] ? rawStatus : "SUCCESS";
         if (data.trx_date) tulisSel_(sheet, k, r, "Tanggal", data.trx_date);
         tulisSel_(sheet, k, r, "Status", status);
-        tulisSel_(sheet, k, r, "Order ID", data.t_id || data.publicId || "");
-        tulisSel_(sheet, k, r, "TRX ID", data.trx_id || data.t_id || "");
+        if (data.t_id || data.publicId) tulisSel_(sheet, k, r, "Order ID", data.t_id || data.publicId);
+        if (data.trx_id || data.t_id) tulisSel_(sheet, k, r, "TRX ID", data.trx_id || data.t_id);
         if (data.product) tulisSel_(sheet, k, r, "Produk", data.product);
         if (data.item) tulisSel_(sheet, k, r, "Item", data.item);
         if (data.player_id) tulisSel_(sheet, k, r, "Player ID", asText_(data.player_id));
         if (data.voucher_code || data.voucher) tulisSel_(sheet, k, r, "Voucher", data.voucher_code || data.voucher);
         if (data.kode_voucher) tulisSel_(sheet, k, r, "Kode Voucher", data.kode_voucher);
         if (data.sn) tulisSel_(sheet, k, r, "SN", asText_(data.sn));
-        tulisSel_(sheet, k, r, "Harga", data.amount || "");
-        tulisSel_(sheet, k, r, "Sisa Saldo", data.ending_balance || "");
-        if (data.ending_balance !== undefined && data.ending_balance !== "") setMeta_("saldo", String(data.ending_balance).trim());
+        if (data.amount !== undefined && data.amount !== "") tulisSel_(sheet, k, r, "Harga", data.amount);
+        if (data.ending_balance !== undefined && data.ending_balance !== "") {
+          tulisSel_(sheet, k, r, "Sisa Saldo", data.ending_balance);
+          setMeta_("saldo", String(data.ending_balance).trim());
+        }
         if (data.order_url) tulisSel_(sheet, k, r, "Link Order", data.order_url);
-        tulisSel_(sheet, k, r, "Error", status === "FAILED" ? (data.error || data.reason || "") : "");
-        return jawab_({ ok: true, row: r });
+        tulisSel_(sheet, k, r, "Error", (status === "FAILED" || status === "REFUNDED") ? (data.error || data.reason || "") : "");
+        return jawab_({ ok: true, row: r, status: status });
       }
 
       case "results": {
         const out = bacaSemuaBaris_(sheet, k)
-          .filter((b) => b.ref && !b.acked && b.status !== "PENDING" && b.status !== "")
+          .filter((b) => b.ref && !b.acked && (b.status === "SUCCESS" || b.status === "FAILED" || b.status === "REFUNDED"))
           .map((b) => { delete b.acked; return b; });
         const saldoR = getMeta_("saldo");
         return jawab_({ ok: true, data: out, saldo: saldoR.nilai, saldo_updated_at: saldoR.diperbarui });
