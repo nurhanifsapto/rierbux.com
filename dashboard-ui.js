@@ -932,7 +932,7 @@ function buildDashboardHtml({ requireSecret = false } = {}) {
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Order ID</th><th>Tanggal</th><th>Produk &amp; Item</th><th>Roblox</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
+          <thead><tr><th>Order ID</th><th>Tanggal</th><th>Produk &amp; Item</th><th style="text-align:center;">Qty</th><th>Roblox</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
           <tbody id="recentOrdersTbody"><tr><td colspan="7" class="muted" style="text-align:center;padding:24px;">Memuat pesanan terbaru...</td></tr></tbody>
         </table>
       </div>
@@ -1176,7 +1176,7 @@ function buildDashboardHtml({ requireSecret = false } = {}) {
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Order ID</th><th>Tanggal</th><th>Produk &amp; Item</th><th>Roblox</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
+          <thead><tr><th>Order ID</th><th>Tanggal</th><th>Produk &amp; Item</th><th style="text-align:center;">Qty</th><th>Roblox</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
           <tbody id="ordersTbody"><tr><td colspan="7" class="muted" style="text-align:center;padding:26px;">Memuat pesanan...</td></tr></tbody>
         </table>
       </div>
@@ -1302,16 +1302,29 @@ function buildDashboardHtml({ requireSecret = false } = {}) {
     </div>
 
     <div class="card">
-      <div class="card-head">
+      <div class="card-head" style="margin-bottom:12px;">
         <span class="card-title">Daftar Produk Aktif</span>
         <div class="toolbar">
-          <input id="catFilter" class="search-pill" placeholder="Filter produk..." style="width:220px;" oninput="renderCatalogTable()" />
+          <input id="catFilter" class="search-pill" placeholder="Cari produk, slug, Place ID..." style="width:225px;" oninput="renderCatalogTable()" />
+          <select id="catSort" class="select-pill" onchange="renderCatalogTable()">
+            <option value="popular">Urut: Terpopuler</option>
+            <option value="name">Urut: Nama A–Z</option>
+            <option value="price_asc">Harga Termurah</option>
+            <option value="price_desc">Harga Termahal</option>
+          </select>
           <span class="pill pos" id="catCountTag">0 produk</span>
         </div>
       </div>
-      <div class="table-wrap" style="max-height:460px;">
+      <div class="seg-bar" style="margin-bottom:14px;">
+        <button class="seg-btn active" id="kcat-all" onclick="setCatalogCat('all')">Semua</button>
+        <button class="seg-btn" id="kcat-game" onclick="setCatalogCat('game')">Game Pass &amp; Item</button>
+        <button class="seg-btn" id="kcat-robux" onclick="setCatalogCat('robux')">Top Up Robux</button>
+        <button class="seg-btn" id="kcat-ps" onclick="setCatalogCat('ps')">Private Server</button>
+        <button class="seg-btn" id="kcat-limited" onclick="setCatalogCat('limited')">Item Limiteds</button>
+      </div>
+      <div class="table-wrap" style="max-height:520px;">
         <table>
-          <thead><tr><th>#</th><th>Produk</th><th>Slug</th><th>Terjual</th><th>Aksi</th></tr></thead>
+          <thead><tr><th>#</th><th>Produk</th><th>Kategori</th><th>Slug / ID</th><th>Harga</th><th>Terjual / Stok</th><th>Aksi</th></tr></thead>
           <tbody id="catTbody"></tbody>
         </table>
       </div>
@@ -1695,7 +1708,7 @@ function go(view) {
   if (view === "orders") loadOrders();
   if (view === "chat") { loadChat(false); loadChatOrders(); startChatPoll(); }
   if (view === "coins") loadCoins();
-  if (view === "stock") renderCatalogTable();
+  if (view === "stock") loadFullCatalogTab();
   if (view === "api") loadApiKeys();
   if (view === "account") loadAccountExtras();
 }
@@ -1864,7 +1877,7 @@ function renderRecentOrders() {
   const tb = document.getElementById("recentOrdersTbody");
   if (!tb) return;
   if (!list.length) {
-    tb.innerHTML = '<tr><td colspan="7" class="muted" style="text-align:center;padding:24px;">Belum ada pesanan.</td></tr>';
+    tb.innerHTML = '<tr><td colspan="8" class="muted" style="text-align:center;padding:24px;">Belum ada pesanan.</td></tr>';
     return;
   }
   tb.innerHTML = list.map(o => renderOrderRowHtml(o)).join("");
@@ -1874,16 +1887,18 @@ function renderOrderRowHtml(o) {
   const id = o.id || o.publicId;
   const pay = classifyPayStatus(o.paymentStatus);
   const isUnpaid = pay.kind === "unpaid";
-  const itemsHtml = (o.items || []).map(it => {
+  const items = o.items || [];
+  const itemsHtml = items.map(it => {
     const c = classifyItemStatus(it.status, o.paymentStatus);
-    return esc(it.product) + ' · ' + esc(it.item) + ' ×' + (it.quantity || 1) + ' <span class="pill ' + c.cls + '">' + esc(it.status || "-") + '</span>';
+    return esc(it.product) + ' · ' + esc(it.item) + ' <span class="pill ' + c.cls + '">' + esc(it.status || "-") + '</span>';
   }).join("<br>");
-  const rbx = (o.items || []).map(it => it.inputs?.robloxUsername || "").filter(Boolean).join(", ") || "-";
+  const qtyHtml = items.map(it => '<span class="pill neutral">' + fmtNum(it.quantity || 1) + '</span>').join("<br>");
+  const rbx = items.map(it => it.inputs?.robloxUsername || "").filter(Boolean).join(", ") || "-";
   const act = '<div class="btn-row">' +
     '<button class="btn-pill sm" onclick="openOrderDetail(\\'' + esc(id) + '\\')">Detail</button>' +
     (isUnpaid ? '<button class="btn-pill sm obsidian" onclick="ordAct(\\'pay_balance\\',\\'' + esc(id) + '\\')">Bayar</button><button class="btn-pill sm danger" onclick="ordAct(\\'cancel\\',\\'' + esc(id) + '\\')">Batal</button>' : '') +
     '</div>';
-  return '<tr><td><code>#' + esc(id) + '</code></td><td class="muted">' + esc(String(o.createdAt || "").slice(0, 16).replace("T", " ")) + '</td><td>' + itemsHtml + '</td><td>' + esc(rbx) + '</td><td><strong>' + fmtRp(o.total) + '</strong></td><td><span class="pill ' + pay.cls + '">' + esc(o.paymentStatus) + '</span></td><td>' + act + '</td></tr>';
+  return '<tr><td><code>#' + esc(id) + '</code></td><td class="muted">' + esc(String(o.createdAt || "").slice(0, 16).replace("T", " ")) + '</td><td>' + itemsHtml + '</td><td style="text-align:center;">' + (qtyHtml || '-') + '</td><td>' + esc(rbx) + '</td><td><strong>' + fmtRp(o.total) + '</strong></td><td><span class="pill ' + pay.cls + '">' + esc(o.paymentStatus) + '</span></td><td>' + act + '</td></tr>';
 }
 
 async function loadStatus(fresh = false) {
@@ -1980,19 +1995,164 @@ function renderGameCards() {
   ).join("");
 }
 
+let activeCatalogCat = "all";
+
+function setCatalogCat(cat) {
+  activeCatalogCat = cat;
+  for (const c of ["all", "game", "robux", "ps", "limited"]) {
+    const el = document.getElementById("kcat-" + c);
+    if (el) el.classList.toggle("active", c === cat);
+  }
+  loadFullCatalogTab();
+}
+
+async function loadFullCatalogTab() {
+  const jobs = [];
+  if (!allPsGames.length) {
+    jobs.push(api("/api/private-servers").then(d => { allPsGames = d.games || []; }).catch(() => {}));
+  }
+  if (!allLimiteds.length) {
+    jobs.push(api("/api/limiteds").then(d => { limTags = d.filterTags || []; allLimiteds = d.items || []; }).catch(() => {}));
+  }
+  if (jobs.length) {
+    renderCatalogTable();
+    await Promise.all(jobs);
+  }
+  renderCatalogTable();
+}
+
 function renderCatalogTable() {
   const q = (document.getElementById("catFilter")?.value || "").toLowerCase().trim();
-  const list = q ? allProducts.filter(p => p.name.toLowerCase().includes(q) || p.slug.includes(q)) : allProducts;
+  const sortMode = document.getElementById("catSort")?.value || "popular";
+  const rows = [];
+
+  if (activeCatalogCat === "all" || activeCatalogCat === "game") {
+    for (const p of allProducts) {
+      rows.push({
+        cat: "game",
+        catLabel: "Game Pass",
+        catCls: "pos",
+        name: p.name,
+        slugOrId: p.slug,
+        thumb: p.thumbnailUrl || "",
+        price: Number(p.minPrice || 0),
+        priceText: p.minPrice ? ("Mulai " + fmtRp(p.minPrice)) : "-",
+        sold: Number(p.totalSold || 0),
+        metaText: p.totalSold ? (fmtNum(p.totalSold) + " terjual") : "-",
+        onClick: "openFromCatalog('product','" + esc(p.slug) + "')",
+      });
+    }
+  }
+
+  if (activeCatalogCat === "all" || activeCatalogCat === "robux") {
+    const robuxRows = [
+      { name: "Robux 5 Hari (Game Pass)", slug: "robux-5-hari", catId: "robux-5d", meta: "Via Game Pass (5 Hari)" },
+      { name: "Robux Transfer (Tanpa Pajak)", slug: "robux-transfer", catId: "robux-transfer", meta: "Direct Transfer R$" },
+      { name: "Robux Instan (Via Login)", slug: "robux-instan", catId: "robux-instant", meta: "Masuk Instan" },
+    ];
+    for (const r of robuxRows) {
+      rows.push({
+        cat: "robux",
+        catLabel: "Robux",
+        catCls: "ok",
+        name: r.name,
+        slugOrId: r.slug,
+        thumb: "/assets/logo.svg",
+        price: 0,
+        priceText: "Dinamis / R$",
+        sold: 999999,
+        metaText: r.meta,
+        onClick: "openFromCatalog('" + r.catId + "','" + r.slug + "')",
+      });
+    }
+  }
+
+  if (activeCatalogCat === "all" || activeCatalogCat === "ps") {
+    for (const g of allPsGames) {
+      rows.push({
+        cat: "ps",
+        catLabel: "Private Server",
+        catCls: "warn",
+        name: g.name,
+        slugOrId: "Place " + g.rootPlaceId,
+        thumb: g.thumbnailUrl || "",
+        price: Number(g.unitPrice || 0),
+        priceText: fmtRp(g.unitPrice) + (g.priceRobux ? " (" + g.priceRobux + " R$)" : ""),
+        sold: Number(g.soldCount || 0),
+        metaText: g.soldCount ? (fmtNum(g.soldCount) + " terjual") : "Aktif",
+        onClick: "openPsFromCatalog('" + esc(g.rootPlaceId) + "')",
+      });
+    }
+  }
+
+  if (activeCatalogCat === "all" || activeCatalogCat === "limited") {
+    for (const it of allLimiteds) {
+      const stockTxt = it.readyStockCount > 0 ? ("Ready: " + it.readyStockCount) : (it.holdingStockCount > 0 ? ("Holding: " + it.holdingStockCount) : (it.isPreorder ? "Preorder" : "Habis"));
+      rows.push({
+        cat: "limited",
+        catLabel: "Limited",
+        catCls: "neutral",
+        name: it.name,
+        slugOrId: "Asset " + it.assetId,
+        thumb: it.imageUrl || "",
+        price: Number(it.unitPrice || 0),
+        priceText: fmtRp(it.unitPrice),
+        sold: Number(it.totalSold || 0),
+        metaText: stockTxt + (it.totalSold ? " · " + it.totalSold + " terjual" : ""),
+        onClick: "openLimitedFromCatalog('" + esc(it.slug) + "')",
+      });
+    }
+  }
+
+  const filtered = q
+    ? rows.filter(r => r.name.toLowerCase().includes(q) || r.slugOrId.toLowerCase().includes(q) || r.catLabel.toLowerCase().includes(q))
+    : rows;
+
+  if (sortMode === "name") filtered.sort((a, b) => a.name.localeCompare(b.name));
+  else if (sortMode === "price_asc") filtered.sort((a, b) => (a.price || 1e12) - (b.price || 1e12));
+  else if (sortMode === "price_desc") filtered.sort((a, b) => (b.price || 0) - (a.price || 0));
+  else filtered.sort((a, b) => (b.sold || 0) - (a.sold || 0));
+
+  const countEl = document.getElementById("catCountTag");
+  if (countEl) countEl.textContent = fmtNum(filtered.length) + " produk";
+  const totalAll = allProducts.length + 3 + allPsGames.length + allLimiteds.length;
+  const kpiEl = document.getElementById("kpiCatalog");
+  if (kpiEl && totalAll > allProducts.length) kpiEl.textContent = fmtNum(totalAll);
+
   const tb = document.getElementById("catTbody");
   if (!tb) return;
-  tb.innerHTML = list.slice(0, 165).map((p, i) =>
+  if (!filtered.length) {
+    tb.innerHTML = '<tr><td colspan="7" class="muted" style="text-align:center;padding:24px;">Tidak ada produk yang cocok.</td></tr>';
+    return;
+  }
+  tb.innerHTML = filtered.slice(0, 350).map((r, i) =>
     '<tr><td>' + (i + 1) + '</td><td><div style="display:flex;align-items:center;gap:10px;">' +
-    (p.thumbnailUrl ? '<img src="' + esc(p.thumbnailUrl) + '" style="width:40px;height:26px;border-radius:6px;object-fit:cover;" loading="lazy" />' : '') +
-    '<strong>' + esc(p.name) + '</strong></div></td><td><code>' + esc(p.slug) + '</code></td><td class="muted">' + (p.totalSold ? fmtNum(p.totalSold) : '-') + '</td>' +
-    '<td><button class="btn-pill sm" onclick="openFromCatalog(\\'' + esc(p.slug) + '\\')">Pilih</button></td></tr>'
+    (r.thumb ? '<img src="' + esc(r.thumb) + '" style="width:40px;height:26px;border-radius:6px;object-fit:cover;background:var(--bg-recessed);" loading="lazy" />' : '') +
+    '<strong>' + esc(r.name) + '</strong></div></td>' +
+    '<td><span class="pill ' + r.catCls + '">' + esc(r.catLabel) + '</span></td>' +
+    '<td><code>' + esc(r.slugOrId) + '</code></td>' +
+    '<td><strong>' + esc(r.priceText) + '</strong></td>' +
+    '<td class="muted">' + esc(r.metaText) + '</td>' +
+    '<td><button class="btn-pill sm" onclick="' + r.onClick + '">Pilih</button></td></tr>'
   ).join("");
 }
-function openFromCatalog(slug) { go("order"); setCat("product"); pickSlug(slug); }
+
+async function openFromCatalog(cat, slug) {
+  go("order");
+  await setCat(cat);
+  if (cat === "product" && slug) pickSlug(slug);
+}
+async function openPsFromCatalog(placeId) {
+  go("order");
+  await setCat("private-server");
+  const g = allPsGames.find(x => String(x.rootPlaceId) === String(placeId));
+  if (g) pickPsGame(g.rootPlaceId, g.productItemId || 0, g.unitPrice || 0, g.name, g.thumbnailUrl || "");
+}
+async function openLimitedFromCatalog(slug) {
+  go("order");
+  await setCat("limited");
+  pickLimited(slug);
+}
 
 async function setCat(cat) {
   activeCat = cat;
@@ -2505,7 +2665,7 @@ async function loadOrders() {
     document.getElementById("ordNextBtn").disabled = !pg.hasNextPage && pg.page >= pg.totalPages;
 
     const tb = document.getElementById("ordersTbody");
-    if (!list.length) { tb.innerHTML = '<tr><td colspan="7" class="muted" style="text-align:center;padding:24px;">Tidak ada pesanan cocok.</td></tr>'; return; }
+    if (!list.length) { tb.innerHTML = '<tr><td colspan="8" class="muted" style="text-align:center;padding:24px;">Tidak ada pesanan cocok.</td></tr>'; return; }
     tb.innerHTML = list.map(o => renderOrderRowHtml(o)).join("");
   } catch (err) { toast("err", esc(err.message)); }
 }
