@@ -94,8 +94,8 @@ function createDashboardServer(bot, { port = 3030, host = "127.0.0.1", secret = 
     }
 
     try {
-      // Serve HTML Dashboard
-      if (req.method === "GET" && pathname === "/") {
+      // Serve HTML Dashboard (juga dukung /chat untuk langsung buka Live Mirror Chat)
+      if (req.method === "GET" && (pathname === "/" || pathname === "/chat")) {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
         res.end(buildDashboardHtml({ requireSecret: Boolean(secret) }));
         return;
@@ -738,6 +738,51 @@ function createDashboardServer(bot, { port = 3030, host = "127.0.0.1", secret = 
           "cache-control": "private, max-age=300",
         });
         return res.end(buffer);
+      }
+
+      // Real-time SSE Mirror Proxy dari https://rierbux.com/api/chat/stream
+      if (req.method === "GET" && pathname === "/api/chat/stream") {
+        const qSecret = u.searchParams.get("secret") || "";
+        if (!checkAuth(req, res, qSecret)) return;
+        const cookieHeader = bot.jar.toHeader();
+        if (!cookieHeader) {
+          return sendJson(res, 401, { ok: false, error: "Sesi RierBux belum aktif." });
+        }
+        const ac = new AbortController();
+        req.on("close", () => ac.abort());
+        const base = (process.env.RIERBUX_BASE_URL || "https://rierbux.com").replace(/\/+$/, "");
+        const upstream = await fetch(`${base}/api/chat/stream`, {
+          headers: {
+            accept: "text/event-stream",
+            "cache-control": "no-cache",
+            cookie: cookieHeader,
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/158.0.0.0 Safari/537.36",
+          },
+          signal: ac.signal,
+        });
+        if (!upstream.ok || !upstream.body) {
+          return sendJson(res, upstream.status || 502, { ok: false, error: `SSE upstream HTTP ${upstream.status}` });
+        }
+        res.writeHead(200, {
+          "content-type": "text/event-stream; charset=utf-8",
+          "cache-control": "no-cache, no-transform",
+          connection: "keep-alive",
+          "x-accel-buffering": "no",
+        });
+        const reader = upstream.body.getReader();
+        (async () => {
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              res.write(Buffer.from(value));
+            }
+          } catch {}
+          finally {
+            try { res.end(); } catch {}
+          }
+        })();
+        return;
       }
 
       if (req.method === "POST" && pathname === "/api/chat/send") {

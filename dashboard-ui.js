@@ -1513,6 +1513,20 @@ function buildDashboardHtml({ requireSecret = false } = {}) {
   </div>
 </div>
 
+<!-- Image Lightbox Modal -->
+<div id="chatLightbox" class="backdrop hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="modal wide" style="text-align:center;max-width:780px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <h3 style="margin:0;">Pratinjau Gambar</h3>
+      <div class="btn-row">
+        <a id="chatLightboxDl" class="btn-pill sm obsidian" href="#" download target="_blank">Download</a>
+        <button class="btn-pill sm" onclick="document.getElementById('chatLightbox').classList.add('hidden')">Tutup</button>
+      </div>
+    </div>
+    <img id="chatLightboxImg" src="" alt="Preview" style="max-width:100%;max-height:70vh;border-radius:14px;object-fit:contain;" />
+  </div>
+</div>
+
 <script>
 const REQUIRE_SECRET = ${requireSecret ? "true" : "false"};
 let dashSecret = localStorage.getItem("rb_dash_secret") || "";
@@ -2702,13 +2716,14 @@ async function pingSheet() {
   } catch (err) { toast("err", esc(err.message)); }
 }
 
-// ── Chat Admin (Rier-chan) Logic ─────────────────────────────────────────────
+// ── Chat Admin (Rier-chan) Live Mirror Logic (Real-time SSE + Fallback Poll) ─
 let chatMessages = [];
 let chatNextCursor = null;
 let chatStickers = [];
 let chatReplyTo = null;
 let chatPendingAttach = null;
 let chatPollTimer = null;
+let chatEventSource = null;
 let chatOrdPage = 1;
 
 function chatProxyUrl(p) {
@@ -2717,14 +2732,79 @@ function chatProxyUrl(p) {
   return "/api/chat/proxy?path=" + encodeURIComponent(p);
 }
 
+function setChatConnBadge(text, cls) {
+  const el = document.getElementById("chatConnTag");
+  if (!el) return;
+  el.textContent = text;
+  el.className = "pill " + (cls || "ok");
+}
+
 function stopChatPoll() {
   if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }
+  if (chatEventSource) { try { chatEventSource.close(); } catch {} chatEventSource = null; }
 }
+
 function startChatPoll() {
   stopChatPoll();
+  // Real-time SSE Mirror langsung dari https://rierbux.com/api/chat/stream
+  try {
+    const url = "/api/chat/stream" + (dashSecret ? "?secret=" + encodeURIComponent(dashSecret) : "");
+    const es = new EventSource(url);
+    chatEventSource = es;
+    setChatConnBadge("Menyambungkan...", "warn");
+
+    es.onopen = () => {
+      setChatConnBadge("● Live Mirror", "ok");
+      pollChatNew();
+    };
+    es.addEventListener("ping", () => setChatConnBadge("● Live Mirror", "ok"));
+    es.addEventListener("message", (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (!msg || !msg.id) return;
+        const idx = chatMessages.findIndex(m => Number(m.id) === Number(msg.id) || (msg.clientNonce && m.clientNonce === msg.clientNonce));
+        if (idx >= 0) chatMessages[idx] = msg;
+        else chatMessages.push(msg);
+        chatMessages.sort((a, b) => Number(a.id) - Number(b.id));
+        renderChatMessages(true);
+        if (msg.senderRole !== "user") {
+          api("/api/chat/read", { method: "POST", body: "{}" }).catch(() => {});
+        }
+      } catch {}
+    });
+    es.addEventListener("message-edited", (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        const idx = chatMessages.findIndex(m => Number(m.id) === Number(msg.id));
+        if (idx >= 0) { chatMessages[idx] = { ...chatMessages[idx], ...msg }; renderChatMessages(false); }
+      } catch {}
+    });
+    es.addEventListener("message-deleted", (ev) => {
+      try {
+        const d = JSON.parse(ev.data);
+        const idx = chatMessages.findIndex(m => Number(m.id) === Number(d.messageId));
+        if (idx >= 0) { chatMessages[idx].deletedBy = d.deletedBy || "user"; renderChatMessages(false); }
+      } catch {}
+    });
+    es.addEventListener("message-preview", (ev) => {
+      try {
+        const d = JSON.parse(ev.data);
+        const idx = chatMessages.findIndex(m => Number(m.id) === Number(d.messageId || d.id));
+        if (idx >= 0 && d.linkPreview) { chatMessages[idx].linkPreview = d.linkPreview; renderChatMessages(false); }
+      } catch {}
+    });
+    es.addEventListener("orders", () => { if (activeView === "chat") loadChatOrders(); });
+    es.addEventListener("pins", () => { if (activeView === "chat") loadChat(false); });
+    es.addEventListener("gate", () => { if (activeView === "chat") loadChat(false); });
+    es.onerror = () => {
+      setChatConnBadge("Menyambung ulang...", "warn");
+    };
+  } catch {}
+
+  // Fallback catch-up poll tiap 12 detik jaga-jaga jika proxy menutup SSE idle
   chatPollTimer = setInterval(() => {
     if (activeView === "chat") pollChatNew();
-  }, 4000);
+  }, 12000);
 }
 
 async function loadChat(force = false) {
@@ -2816,6 +2896,22 @@ function filterChatOrderById(publicId) {
   if (el) { el.value = publicId; chatOrdPage = 1; loadChatOrders(); }
 }
 
+function fmtChatDateLabel(isoDate) {
+  if (!isoDate) return "";
+  const today = new Date().toISOString().slice(0, 10);
+  const yest = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  if (isoDate === today) return "Hari ini";
+  if (isoDate === yest) return "Kemarin";
+  const d = new Date(isoDate + "T00:00:00Z");
+  return isNaN(d.getTime()) ? isoDate : d.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function openLightbox(url) {
+  document.getElementById("chatLightboxImg").src = url;
+  document.getElementById("chatLightboxDl").href = url;
+  document.getElementById("chatLightbox").classList.remove("hidden");
+}
+
 function renderChatMessages(scrollBottom = false) {
   const el = document.getElementById("chatLog");
   if (!el) return;
@@ -2829,7 +2925,7 @@ function renderChatMessages(scrollBottom = false) {
     const dt = String(m.createdAt || "").slice(0, 10);
     if (dt && dt !== lastDate) {
       lastDate = dt;
-      html += '<div class="chat-date-div"><span>' + esc(dt) + '</span></div>';
+      html += '<div class="chat-date-div"><span>' + esc(fmtChatDateLabel(dt)) + '</span></div>';
     }
     const isUser = m.senderRole === "user";
     const deleted = Boolean(m.deletedBy);
@@ -2848,24 +2944,26 @@ function renderChatMessages(scrollBottom = false) {
       if (Array.isArray(m.attachments) && m.attachments.length) {
         inner += m.attachments.map(a => {
           const u = chatProxyUrl(a.url);
-          return '<a href="' + u + '" target="_blank"><img class="msg-img" src="' + u + '" loading="lazy" alt="Lampiran" /></a>';
+          return '<img class="msg-img" src="' + u + '" loading="lazy" alt="Lampiran" onclick="openLightbox(\\'' + u + '\\')" />';
         }).join("");
       }
       if (m.linkPreview && m.linkPreview.url) {
-        inner += '<a class="msg-link-card" target="_blank" href="' + esc(m.linkPreview.url) + '"><div style="font-weight:600;font-size:12px;">' + esc(m.linkPreview.title || m.linkPreview.url) + '</div>' +
+        inner += '<a class="msg-link-card" target="_blank" href="' + esc(m.linkPreview.url) + '">' +
+          (m.linkPreview.imageUrl ? '<img src="' + esc(m.linkPreview.imageUrl) + '" style="width:100%;max-height:110px;object-fit:cover;border-radius:7px;margin-bottom:6px;" loading="lazy" />' : '') +
+          '<div style="font-weight:600;font-size:12px;">' + esc(m.linkPreview.title || m.linkPreview.url) + '</div>' +
           (m.linkPreview.description ? '<div class="muted" style="font-size:11px;margin-top:2px;">' + esc(m.linkPreview.description).slice(0, 110) + '</div>' : '') + '</a>';
       }
     }
 
     const timeStr = String(m.createdAt || "").slice(11, 16);
-    const acts = deleted ? "" : '<span class="msg-acts">' +
+    const acts = (deleted || m._pending) ? "" : '<span class="msg-acts">' +
       '<button class="msg-act-btn" onclick="setChatReply(' + m.id + ')">Balas</button>' +
       (isUser ? '<button class="msg-act-btn" onclick="editChatPrompt(' + m.id + ')">Edit</button><button class="msg-act-btn" onclick="deleteChatPrompt(' + m.id + ')">Hapus</button>' : '') +
       '<button class="msg-act-btn" onclick="pinChatToggle(' + m.id + ')">Pin</button></span>';
 
     html += '<div class="msg-row ' + (isUser ? 'user' : 'admin') + '">' +
-      '<div class="msg-bubble' + (deleted ? ' deleted' : '') + '">' + inner + '</div>' +
-      '<div class="msg-meta"><span>' + (isUser ? 'Kamu' : 'Rier-chan') + ' · ' + esc(timeStr) + (m.editedAt ? ' · diedit' : '') + '</span>' + acts + '</div></div>';
+      '<div class="msg-bubble' + (deleted ? ' deleted' : '') + '"' + (m._pending ? ' style="opacity:.7"' : '') + '>' + inner + '</div>' +
+      '<div class="msg-meta"><span>' + (isUser ? 'Kamu' : 'Rier-chan') + ' · ' + esc(m._pending ? 'Mengirim...' : timeStr) + (m.editedAt ? ' · diedit' : '') + '</span>' + acts + '</div></div>';
   }
   el.innerHTML = html;
   if (scrollBottom) el.scrollTop = el.scrollHeight;
@@ -2931,20 +3029,40 @@ async function sendChatNow() {
   const inp = document.getElementById("chatInput");
   const content = inp.value.trim();
   if (!content && !chatPendingAttach) return;
+  const nonce = (crypto.randomUUID ? crypto.randomUUID() : ("tmp_" + Date.now()));
+  const att = chatPendingAttach ? [chatPendingAttach] : [];
+  const replyId = chatReplyTo?.id;
+  // Optimistic instant bubble
+  const tempMsg = {
+    id: Date.now() + 9999999,
+    senderRole: "user",
+    content,
+    clientNonce: nonce,
+    createdAt: new Date().toISOString(),
+    _pending: true,
+  };
+  chatMessages.push(tempMsg);
+  renderChatMessages(true);
+  inp.value = "";
+  clearChatReply();
+  clearChatAttach();
   try {
-    await api("/api/chat/send", {
+    const res = await api("/api/chat/send", {
       method: "POST",
-      body: JSON.stringify({
-        content,
-        attachments: chatPendingAttach ? [chatPendingAttach] : [],
-        replyToMessageId: chatReplyTo?.id,
-      }),
+      body: JSON.stringify({ content, attachments: att, replyToMessageId: replyId, clientNonce: nonce }),
     });
-    inp.value = "";
-    clearChatReply();
-    clearChatAttach();
-    await loadChat(false);
-  } catch (err) { toast("err", esc(err.message)); }
+    if (res.message && res.message.id) {
+      const idx = chatMessages.findIndex(m => m.clientNonce === nonce);
+      if (idx >= 0) chatMessages[idx] = res.message;
+      renderChatMessages(true);
+    } else {
+      await pollChatNew();
+    }
+  } catch (err) {
+    chatMessages = chatMessages.filter(m => m.clientNonce !== nonce);
+    renderChatMessages(false);
+    toast("err", esc(err.message));
+  }
 }
 
 async function editChatPrompt(id) {
@@ -3023,8 +3141,9 @@ async function loadChatOrders() {
           '<div style="min-width:0;flex:1;"><div style="font-weight:600;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(first.productName || "-") + ' · ' + esc(first.itemName || "-") + '</div>' +
           '<div class="muted" style="font-size:11px;">' + (first.robloxUsername ? '@' + esc(first.robloxUsername) + ' · ' : '') + fmtRp(total) + '</div></div>' +
         '</div>' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">' +
-          '<span class="pill ' + itCls + '">' + esc(first.status || "-") + '</span>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">' +
+          '<div class="btn-row"><span class="pill ' + itCls + '">' + esc(first.status || "-") + '</span>' +
+          (Number(o.refundedAmount || 0) > 0 ? '<span class="pill pos">Refunded ' + fmtNum(o.refundedAmount) + ' RC</span>' : '') + '</div>' +
           '<div class="btn-row"><button class="btn-pill sm" onclick="openOrderDetail(\\'' + esc(o.publicId) + '\\')">Detail</button>' +
           '<button class="btn-pill sm obsidian" onclick="askOrderInChat(\\'' + esc(o.publicId) + '\\',\\'' + esc(prodNames).replace(/'/g, "") + '\\',\\'' + esc(o.paymentStatus) + '\\')">Tanyain</button></div>' +
         '</div></div>';
@@ -3048,6 +3167,19 @@ function tickClock() {
 }
 
 function init() {
+  if (location.pathname === "/chat") activeView = "chat";
+  const chatInp = document.getElementById("chatInput");
+  if (chatInp) {
+    chatInp.addEventListener("paste", (e) => {
+      const items = e.clipboardData?.items || [];
+      for (const it of items) {
+        if (it.type && it.type.startsWith("image/")) {
+          const f = it.getAsFile();
+          if (f) handleChatImageFile({ files: [f], value: "" });
+        }
+      }
+    });
+  }
   go(activeView);
   loadStatus(true);
   loadProducts();
