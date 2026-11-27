@@ -682,7 +682,20 @@ class RierBuxBot {
   }
 
   // ── Next.js Server Action Engine + Auto-Refresh ───────────────────────────
-  async refreshActionIds(pages = ["/", "/products/fish-it", "/cart", "/coins", "/topup/robux-5-hari", "/topup/robux-instan", "/topup/robux-transfer", "/orders", "/settings/api"]) {
+  async refreshActionIds(pages = [
+    "/",
+    "/products/fish-it",
+    "/topup/robux-5-hari",
+    "/topup/robux-instan",
+    "/topup/robux-transfer",
+    "/private-servers/2753915549",
+    "/limiteds/bighead",
+    "/membership",
+    "/cart",
+    "/coins",
+    "/orders",
+    "/settings/api",
+  ]) {
     const chunkUrls = new Set();
     for (const p of pages) {
       try {
@@ -1418,8 +1431,11 @@ class RierBuxBot {
 
   // ── 5. Roblox Validation & Game Pass Check ────────────────────────────────
   async checkRobloxUsername(username, requireRobloxPlus = false) {
-    const clean = String(username || "").trim();
+    const clean = String(username || "").trim().replace(/^@+/, "");
     if (!clean) throw new Error("Username Roblox kosong.");
+    if (clean.length < 3 || clean.length > 20 || /^_|_$|__/.test(clean) || !/^[a-zA-Z0-9_]+$/.test(clean)) {
+      return { valid: false, user: null, message: "Format username Roblox tidak valid (3-20 karakter, huruf/angka/underscore, tanpa __)." };
+    }
     const r = await this.fetchJson(
       `/api/roblox/check-username?robloxUsername=${encodeURIComponent(clean)}&requireRobloxPlus=${requireRobloxPlus}`,
       { requireAuth: true }

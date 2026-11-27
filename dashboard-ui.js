@@ -1363,8 +1363,9 @@ function updateSummary() {
 }
 
 async function checkRoblox() {
-  const u = document.getElementById("rbxInput").value.trim();
+  const u = document.getElementById("rbxInput").value.trim().replace(/^@+/, "");
   if (!u) return;
+  document.getElementById("rbxInput").value = u;
   try {
     const d = await api("/api/roblox/check?username=" + encodeURIComponent(u));
     if (d.data?.valid && d.data?.user) {
@@ -1377,7 +1378,7 @@ async function checkRoblox() {
     } else {
       verifiedRbxUser = null;
       document.getElementById("rbxChip").classList.add("hidden");
-      toast("err", "Username Roblox tidak ditemukan.");
+      toast("err", esc(d.data?.message || "Username Roblox tidak ditemukan."));
     }
   } catch (err) { toast("err", esc(err.message)); }
 }
