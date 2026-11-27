@@ -19,7 +19,7 @@ function postJsonFollow(urlStr, payload, hops = 0) {
         path: u.pathname + u.search,
         method: hops === 0 ? "POST" : "GET",
         family: 4,
-        timeout: 25000,
+        timeout: 45000,
         headers: body
           ? { "content-type": "application/json", "content-length": Buffer.byteLength(body) }
           : {},
@@ -247,9 +247,9 @@ async function runWorker(bot, { createDashboardServer, syncCatalog, fmtWIB }) {
     return;
   }
 
-  // Initial catalog sync ke Google Sheet jika tersedia
+  // Initial catalog sync ke Google Sheet jika tersedia (ambil semua 165+ game + PS + Limiteds!)
   try {
-    const cat = await syncCatalog(bot, { fetchAllDetails: false });
+    const cat = await syncCatalog(bot, { fetchAllDetails: true });
     if (cat.total_items > 0) {
       workerState.catalogRows = (await uploadCatalogToSheet(cat)) || 0;
       workerState.lastCatalogSyncAt = Date.now();
@@ -280,7 +280,7 @@ async function runWorker(bot, { createDashboardServer, syncCatalog, fmtWIB }) {
       // Auto-sync katalog tiap 30 menit
       if (Date.now() - workerState.lastCatalogSyncAt > 30 * 60_000) {
         try {
-          const cat = await syncCatalog(bot, { fetchAllDetails: false });
+          const cat = await syncCatalog(bot, { fetchAllDetails: true });
           if (cat.total_items > 0) {
             workerState.catalogRows = (await uploadCatalogToSheet(cat)) || 0;
           }

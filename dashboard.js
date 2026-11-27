@@ -396,12 +396,19 @@ function createDashboardServer(bot, { port = 3030, host = "127.0.0.1", secret = 
         const body = await readJsonBody(req);
         if (!checkAuth(req, res, body.secret)) return;
         const { syncCatalog } = require("./rierbux.js");
-        pushLog("info", "🔄 Menyinkronkan katalog RierBux ke products.json...");
-        const cat = await syncCatalog(bot, { fetchAllDetails: Boolean(body.all) });
+        const { uploadCatalogToSheet } = require("./webhook.js");
+        pushLog("info", "🔄 Menyinkronkan SEMUA katalog RierBux (165+ game, Robux, PS & Limiteds)...");
+        const cat = await syncCatalog(bot, { fetchAllDetails: body.all !== false });
         cache.products = cat.products;
         cache.productsAt = Date.now();
-        pushLog("ok", `✅ Sync selesai: ${cat.total_products} produk, ${cat.total_items} item (${cat.source}).`);
-        return sendJson(res, 200, { ok: true, total_products: cat.total_products, total_items: cat.total_items, source: cat.source });
+        let sheetRows = null;
+        try {
+          sheetRows = await uploadCatalogToSheet(cat);
+        } catch (err) {
+          pushLog("warn", `⚠️ Upload katalog ke Google Sheet gagal: ${err.message}`);
+        }
+        pushLog("ok", `✅ Sync selesai: ${cat.total_products} produk, ${cat.total_items} item (${cat.source})${sheetRows !== null ? ` → Sheet: ${sheetRows} baris` : ""}.`);
+        return sendJson(res, 200, { ok: true, total_products: cat.total_products, total_items: cat.total_items, sheet_rows: sheetRows, source: cat.source });
       }
 
       // ── Roblox Lookup & Game Pass Verification ──────────────────────────
@@ -724,7 +731,7 @@ function createDashboardServer(bot, { port = 3030, host = "127.0.0.1", secret = 
         if (!checkAuth(req, res, body.secret)) return;
         const { syncCatalog } = require("./rierbux.js");
         const { uploadCatalogToSheet } = require("./webhook.js");
-        const cat = await syncCatalog(bot, { fetchAllDetails: Boolean(body.all) });
+        const cat = await syncCatalog(bot, { fetchAllDetails: body.all !== false });
         const sheetRows = await uploadCatalogToSheet(cat).catch(() => null);
         pushLog("ok", `📦 [SYNC CATALOG] ${cat.total_products} produk, ${cat.total_items} item${sheetRows !== null ? ` → Sheet: ${sheetRows} baris` : ""}`);
         return sendJson(res, 200, { ok: true, total_products: cat.total_products, total_items: cat.total_items, sheet_rows: sheetRows });

@@ -2151,7 +2151,7 @@ function extractOrderPublicId(str) {
 }
 
 // ─── Catalog Sync ────────────────────────────────────────────────────────────
-async function syncCatalog(bot, { fetchAllDetails = false } = {}) {
+async function syncCatalog(bot, { fetchAllDetails = true, includePrivateServers = true, includeLimiteds = true } = {}) {
   const [stock, storeProducts] = await Promise.all([
     bot.getStock().catch(() => null),
     bot.getStoreProductsList().catch(() => []),
@@ -2178,22 +2178,24 @@ async function syncCatalog(bot, { fetchAllDetails = false } = {}) {
     }
   }
 
-  // Jika tidak ada API key, ambil topup robux (3 halaman) + opsional semua detail produk jika --all
+  // Jika tidak ada API key, ambil topup robux (3 halaman) + semua 165+ produk game (batch 10)
   if (allItems.length === 0) {
     const topupSlugs = ["robux-5-hari", "robux-instan", "robux-transfer"];
-    for (const s of topupSlugs) {
-      try {
-        const d = await bot.getProductDetail(s);
-        d.allItems.forEach((it) =>
-          allItems.push({ ...it, product: { slug: s, name: d.name }, deliveryMethod: s })
-        );
-      } catch {}
-    }
+    await Promise.all(
+      topupSlugs.map(async (s) => {
+        try {
+          const d = await bot.getProductDetail(s);
+          d.allItems.forEach((it) =>
+            allItems.push({ ...it, product: { slug: s, name: d.name }, deliveryMethod: s })
+          );
+        } catch {}
+      })
+    );
 
     if (fetchAllDetails && storeProducts.length > 0) {
-      console.log(`🔄 Mengambil detail item dari ${storeProducts.length} produk (batch 6)...`);
-      for (let i = 0; i < storeProducts.length; i += 6) {
-        const batch = storeProducts.slice(i, i + 6);
+      console.log(`🔄 Mengambil detail item dari ${storeProducts.length} produk (batch 10)...`);
+      for (let i = 0; i < storeProducts.length; i += 10) {
+        const batch = storeProducts.slice(i, i + 10);
         await Promise.all(
           batch.map(async (p) => {
             try {
@@ -2204,10 +2206,51 @@ async function syncCatalog(bot, { fetchAllDetails = false } = {}) {
             } catch {}
           })
         );
-        process.stdout.write(`   Progress: ${Math.min(i + 6, storeProducts.length)}/${storeProducts.length} produk\r`);
+        if (process.stdout.isTTY) {
+          process.stdout.write(`   Progress: ${Math.min(i + 10, storeProducts.length)}/${storeProducts.length} produk (${allItems.length} item)\r`);
+        }
       }
-      console.log("");
+      if (process.stdout.isTTY) console.log("");
     }
+  }
+
+  // Tambahkan juga 60 Private Server populer & 71 Item Limiteds (tidak ada di /api/v1/products)
+  if (includePrivateServers) {
+    try {
+      const psGames = await bot.getPopularPrivateServers();
+      psGames.forEach((g) => {
+        if (!g.productItemId) return;
+        allItems.push({
+          id: g.productItemId,
+          name: g.name,
+          variation: "Private Server",
+          unitPrice: g.unitPrice,
+          price: g.unitPrice,
+          robuxPrice: g.priceRobux,
+          rootPlaceId: g.rootPlaceId,
+          product: { slug: "private-server", name: "Private Server" },
+          deliveryMethod: "private-server",
+        });
+      });
+    } catch {}
+  }
+
+  if (includeLimiteds) {
+    try {
+      const lim = await bot.getLimitedsList();
+      (lim.items || []).forEach((it) => {
+        allItems.push({
+          id: it.slug,
+          name: it.name,
+          variation: "Limited",
+          unitPrice: it.unitPrice,
+          price: it.unitPrice,
+          assetId: it.assetId,
+          product: { slug: "limited", name: "Item Limiteds" },
+          deliveryMethod: "roblox-limited",
+        });
+      });
+    } catch {}
   }
 
   // Kelompokkan item per slug produk
@@ -2234,7 +2277,9 @@ async function syncCatalog(bot, { fetchAllDetails = false } = {}) {
     products: [...bySlug.values()],
   };
 
-  fs.writeFileSync(PRODUCTS_PATH, JSON.stringify(catalog, null, 2));
+  try {
+    fs.writeFileSync(PRODUCTS_PATH, JSON.stringify(catalog, null, 2));
+  } catch {}
   return catalog;
 }
 
@@ -3124,8 +3169,8 @@ async function runCli() {
       }
 
       case "sync": {
-        console.log("🔄 Menyinkronkan katalog RierBux ke products.json...");
-        const cat = await syncCatalog(bot, { fetchAllDetails: Boolean(flags.all) });
+        console.log("🔄 Menyinkronkan SEMUA katalog RierBux ke products.json...");
+        const cat = await syncCatalog(bot, { fetchAllDetails: true });
         console.log(`✅ Katalog disimpan ke products.json!`);
         console.log(`   Produk : ${cat.total_products}`);
         console.log(`   Item   : ${cat.total_items} (sumber: ${cat.source})`);
